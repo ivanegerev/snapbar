@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SnapBar — shoot your screen like film</title>
+<meta name="description" content="SnapBar is a native menu bar screenshot & recording utility for macOS. Capture, annotate, OCR, pin — then circle the keepers.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f2eee3;
+    --card: #eae4d4;
+    --ink: #1a1713;
+    --graphite: #6b6558;
+    --verm: #e14e1d;
+    --line: rgba(26,23,19,.75);
+    --hairline: rgba(26,23,19,.22);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* paper grain */
+  body::after {
+    content: ""; position: fixed; inset: 0; z-index: 999; pointer-events: none;
+    opacity: .05; mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .serif { font-family: "Fraunces", Georgia, serif; }
+  .mono, kbd {
+    font-family: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+    letter-spacing: .08em; text-transform: uppercase;
+  }
+  a { color: inherit; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+
+  /* ------- buttons: stamped, not floating ------- */
+  .btn {
+    display: inline-block; padding: 13px 26px; border: 1.5px solid var(--ink);
+    border-radius: 2px; background: var(--paper); color: var(--ink);
+    font-family: "IBM Plex Mono", monospace; font-size: 12.5px; font-weight: 600;
+    letter-spacing: .08em; text-transform: uppercase; text-decoration: none;
+    box-shadow: 3px 3px 0 var(--ink); cursor: pointer;
+    transition: transform .12s, box-shadow .12s;
+  }
+  .btn:hover { transform: translate(-1px,-1px); box-shadow: 4px 4px 0 var(--ink); }
+  .btn:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 var(--ink); }
+  .btn-ink { background: var(--ink); color: var(--paper); }
+  .btn-verm { background: var(--verm); color: var(--paper); border-color: var(--ink); }
+
+  /* ------- nav ------- */
+  header.top {
+    border-bottom: 1.5px solid var(--ink);
+    background: var(--paper); position: sticky; top: 0; z-index: 60;
+  }
+  .top-inner { display: flex; align-items: center; height: 66px; gap: 30px; }
+  .logo { display: flex; align-items: center; gap: 11px; text-decoration: none; }
+  .logo svg { display: block; }
+  .logo .word { font-family: "Fraunces", serif; font-weight: 600; font-size: 21px; letter-spacing: -.01em; }
+  .top-nav { margin-left: auto; display: flex; gap: 26px; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; letter-spacing: .09em; text-transform: uppercase; }
+  .top-nav a { text-decoration: none; border-bottom: 1.5px solid transparent; padding-bottom: 2px; }
+  .top-nav a:hover { border-color: var(--verm); }
+  header.top .btn { padding: 9px 18px; box-shadow: 2px 2px 0 var(--ink); }
+
+  /* ------- hero ------- */
+  .hero { padding: 74px 0 66px; border-bottom: 1.5px solid var(--ink); }
+  .hero-grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 56px; align-items: center; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--graphite); display: flex; align-items: center; gap: 10px;
+  }
+  .eyebrow::before { content: ""; width: 26px; height: 1.5px; background: var(--verm); display: inline-block; }
+  .hero h1 {
+    font-family: "Fraunces", serif; font-weight: 600; font-size: clamp(40px, 5.4vw, 64px);
+    line-height: 1.04; letter-spacing: -.015em; margin: 20px 0 22px;
+  }
+  .hero h1 em { font-style: italic; color: var(--verm); font-weight: 500; }
+  .hero .lede { font-size: 16.5px; color: var(--graphite); max-width: 480px; }
+  .hero .lede b { color: var(--ink); font-weight: 600; }
+  .cta-row { margin-top: 32px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .cta-note { margin-top: 18px; font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--graphite); }
+  kbd {
+    font-size: 10px; border: 1px solid var(--hairline); border-bottom-width: 2px;
+    border-radius: 3px; padding: 2px 6px; background: var(--card); letter-spacing: .02em;
+  }
+
+  /* figure with crop marks */
+  .figure { position: relative; padding: 18px; }
+  .cropmark { position: absolute; width: 14px; height: 14px; }
+  .cropmark::before, .cropmark::after { content: ""; position: absolute; background: var(--ink); }
+  .cropmark::before { width: 14px; height: 1.5px; }
+  .cropmark::after { width: 1.5px; height: 14px; }
+  .cm-tl { top: 0; left: 0; } .cm-tl::before { top: 0; left: 0; } .cm-tl::after { top: 0; left: 0; }
+  .cm-tr { top: 0; right: 0; } .cm-tr::before { top: 0; right: 0; } .cm-tr::after { top: 0; right: 0; }
+  .cm-bl { bottom: 0; left: 0; } .cm-bl::before { bottom: 0; left: 0; } .cm-bl::after { bottom: 0; left: 0; }
+  .cm-br { bottom: 0; right: 0; } .cm-br::before { bottom: 0; right: 0; } .cm-br::after { bottom: 0; right: 0; }
+  .figcap {
+    margin-top: 14px; text-align: center; font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--graphite);
+  }
+
+  /* ------- popover mockup (light, matches the app) ------- */
+  .popover {
+    background: #f7f4ec; border: 1.5px solid var(--ink); border-radius: 12px;
+    box-shadow: 5px 5px 0 rgba(26,23,19,.9);
+    padding: 14px; width: 100%; max-width: 330px; margin: 0 auto; font-size: 12px;
+    position: relative;
+  }
+  .pop-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .pop-head b { font-family: "Fraunces", serif; font-size: 15px; font-weight: 600; }
+  .pop-badge {
+    font-family: "IBM Plex Mono", monospace; font-size: 8.5px; font-weight: 600; letter-spacing: .1em;
+    background: var(--verm); color: #fff; border-radius: 999px; padding: 2.5px 8px;
+  }
+  .pop-head .dim { margin-left: auto; color: var(--graphite); font-size: 11px; }
+  .pop-label { font-family: "IBM Plex Mono", monospace; font-size: 9px; letter-spacing: .14em; color: var(--graphite); margin: 12px 0 6px; }
+  .tiles { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; }
+  .tiles.two { grid-template-columns: 1fr 1fr; }
+  .tile {
+    border: 1px solid var(--hairline); background: #fffdf7; border-radius: 8px;
+    padding: 9px 4px; text-align: center;
+  }
+  .tile .g { stroke: var(--ink); }
+  .tile .t { font-size: 11px; font-weight: 500; margin-top: 4px; }
+  .tile .k { font-family: "IBM Plex Mono", monospace; font-size: 8.5px; color: var(--graphite); margin-top: 1px; }
+  .rowitem { display: flex; align-items: center; gap: 9px; padding: 6px 7px; border-radius: 6px; color: var(--ink); }
+  .rowitem:nth-child(even) { background: rgba(26,23,19,.035); }
+  .rowitem .k { margin-left: auto; font-family: "IBM Plex Mono", monospace; font-size: 9px; color: var(--graphite); }
+  .rowitem .pro {
+    margin-left: auto; font-family: "IBM Plex Mono", monospace; font-size: 8px; font-weight: 600;
+    background: var(--verm); color: #fff; border-radius: 999px; padding: 1.5px 7px; letter-spacing: .08em;
+  }
+  .rowitem .pro + .k { margin-left: 8px; }
+  .pop-thumbs { display: flex; gap: 6px; }
+  .pop-thumb { width: 60px; height: 42px; border: 1px solid var(--hairline); border-radius: 5px; background: var(--card); position: relative; overflow: hidden; }
+  .pop-thumb::after { content: attr(data-n); position: absolute; bottom: 2px; right: 4px; font-family: "IBM Plex Mono", monospace; font-size: 7px; color: var(--graphite); }
+  /* grease pencil circle on the Area tile */
+  .keeper-circle { position: absolute; pointer-events: none; }
+  .keeper-note {
+    position: absolute; font-family: "Fraunces", serif; font-style: italic; font-size: 15px;
+    color: var(--verm); transform: rotate(-4deg); white-space: nowrap;
+  }
+
+  /* ------- marquee ------- */
+  .marquee { border-bottom: 1.5px solid var(--ink); overflow: hidden; background: var(--ink); color: var(--paper); }
+  .marquee-inner {
+    display: flex; gap: 0; white-space: nowrap; padding: 11px 0;
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .18em;
+    animation: slide 36s linear infinite; width: max-content;
+  }
+  .marquee-inner span { padding: 0 14px; }
+  .marquee-inner .dot { color: var(--verm); }
+  @keyframes slide { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+  /* ------- sections ------- */
+  section { padding: 78px 0; }
+  .sec-rule { border-bottom: 1.5px solid var(--ink); }
+  .sec-head { display: flex; align-items: baseline; gap: 22px; margin-bottom: 44px; flex-wrap: wrap; }
+  .sec-num { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .14em; color: var(--verm); }
+  .sec-head h2 { font-family: "Fraunces", serif; font-weight: 600; font-size: clamp(28px, 3.6vw, 42px); letter-spacing: -.015em; }
+  .sec-head .aside { margin-left: auto; font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--graphite); letter-spacing: .1em; text-transform: uppercase; }
+
+  /* contact-sheet feature grid */
+  .sheet { border: 1.5px solid var(--ink); background: var(--ink); display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5px; }
+  .sheet::after { content: none; background: var(--paper); }
+  @media (max-width: 900px) and (min-width: 561px) { .sheet::after { content: ""; } }
+  .cell { background: var(--paper); padding: 26px 24px 28px; position: relative; }
+  .cell .fr { font-family: "IBM Plex Mono", monospace; font-size: 9.5px; letter-spacing: .14em; color: var(--graphite); }
+  .cell svg { display: block; margin: 16px 0 12px; }
+  .cell h3 { font-family: "Fraunces", serif; font-weight: 600; font-size: 20px; margin-bottom: 6px; }
+  .cell p { font-size: 13px; color: var(--graphite); }
+  .cell .protag {
+    position: absolute; top: 14px; right: -6px; transform: rotate(3deg);
+    font-family: "IBM Plex Mono", monospace; font-size: 9px; font-weight: 600; letter-spacing: .1em;
+    background: var(--verm); color: #fff; padding: 3px 10px;
+  }
+
+  /* ------- pricing ------- */
+  .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; align-items: start; }
+  .plan { border: 1.5px solid var(--ink); border-radius: 3px; background: #f7f4ec; padding: 28px 26px; box-shadow: 4px 4px 0 var(--ink); position: relative; }
+  .plan.keeper { background: #fffdf7; }
+  .plan h3 { font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--graphite); }
+  .price-line { position: relative; display: inline-block; margin: 14px 0 2px; }
+  .price { font-family: "Fraunces", serif; font-weight: 600; font-size: 44px; letter-spacing: -.02em; }
+  .price small { font-size: 17px; color: var(--graphite); font-weight: 500; }
+  .per { font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--graphite); margin-bottom: 20px; }
+  .plan ul { list-style: none; margin: 0 0 26px; font-size: 13.5px; }
+  .plan li { padding: 6px 0 6px 22px; position: relative; border-bottom: 1px solid rgba(26,23,19,.09); }
+  .plan li::before { content: "✓"; position: absolute; left: 0; color: var(--verm); font-weight: 700; }
+  .plan li.no { color: #a39b89; }
+  .plan li.no::before { content: "—"; color: #c4bca8; }
+  .plan .btn { width: 100%; text-align: center; }
+  .keeper-ellipse { position: absolute; left: -14px; top: -12px; width: calc(100% + 28px); height: calc(100% + 22px); pointer-events: none; }
+  .plan-note {
+    position: absolute; top: -34px; right: -8px; font-family: "Fraunces", serif; font-style: italic;
+    font-size: 17px; color: var(--verm); transform: rotate(-3deg);
+  }
+
+  /* ------- faq ------- */
+  .faq { max-width: 780px; }
+  details { border-top: 1.5px solid var(--ink); }
+  details:last-child { border-bottom: 1.5px solid var(--ink); }
+  summary {
+    cursor: pointer; list-style: none; display: flex; gap: 18px; align-items: baseline;
+    padding: 20px 4px; font-family: "Fraunces", serif; font-weight: 600; font-size: 18px;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary .qn { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--verm); letter-spacing: .1em; }
+  summary .plus { margin-left: auto; font-family: "IBM Plex Mono", monospace; color: var(--graphite); }
+  details[open] .plus { transform: rotate(45deg); }
+  details p { padding: 0 4px 22px 52px; color: var(--graphite); font-size: 14.5px; max-width: 640px; }
+
+  /* ------- footer ------- */
+  footer { background: var(--ink); color: var(--paper); padding: 62px 0 40px; }
+  .foot-grid { display: flex; justify-content: space-between; align-items: flex-start; gap: 30px; flex-wrap: wrap; }
+  .foot-word { font-family: "Fraunces", serif; font-weight: 600; font-size: 40px; letter-spacing: -.02em; }
+  .foot-word .dot { color: var(--verm); }
+  .foot-col { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; line-height: 2.2; color: rgba(242,238,227,.65); }
+  .foot-col a { color: var(--paper); text-decoration: none; border-bottom: 1px solid rgba(242,238,227,.3); }
+  .foot-col a:hover { border-color: var(--verm); }
+  .foot-base {
+    margin-top: 48px; padding-top: 18px; border-top: 1px solid rgba(242,238,227,.2);
+    display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    font-family: "IBM Plex Mono", monospace; font-size: 9.5px; letter-spacing: .12em;
+    text-transform: uppercase; color: rgba(242,238,227,.5);
+  }
+
+  @media (max-width: 900px) {
+    .hero-grid { grid-template-columns: 1fr; gap: 44px; }
+    .sheet { grid-template-columns: 1fr 1fr; }
+    .plans { grid-template-columns: 1fr; max-width: 420px; margin: 0 auto; }
+    .plan-note { top: -30px; right: 10px; }
+    .top-nav { display: none; }
+  }
+  @media (max-width: 560px) { .sheet { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<!-- shared logo mark -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <g id="mark">
+      <g fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 15 V9 a3 3 0 0 1 3-3 H15"/>
+        <path d="M27 6 H33 a3 3 0 0 1 3 3 V15"/>
+        <path d="M36 27 V33 a3 3 0 0 1-3 3 H27"/>
+        <path d="M15 36 H9 a3 3 0 0 1-3-3 V27"/>
+      </g>
+      <circle cx="21" cy="21" r="4.6" fill="#e14e1d"/>
+    </g>
+  </defs>
+</svg>
+
+<header class="top">
+  <div class="wrap top-inner">
+    <a class="logo" href="#">
+      <svg width="30" height="30" viewBox="0 0 42 42" style="color:var(--ink)"><use href="#mark"/></svg>
+      <span class="word">SnapBar</span>
+    </a>
+    <nav class="top-nav">
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">Questions</a>
+    </nav>
+    <a class="btn btn-ink" href="https://github.com/ivanegerev/snapbar/releases/latest/download/SnapBar.zip" style="margin-left:20px">Download</a>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <div class="eyebrow">SB-11 · A menu bar utility for macOS 13+</div>
+      <h1>Shoot your screen<br>like it's <em>film.</em></h1>
+      <p class="lede">SnapBar treats every capture like a frame on a contact sheet — shoot it, mark it up, circle the keeper, ship it. <b>Native Swift. 4&nbsp;MB. No Electron, no cloud, no account.</b></p>
+      <div class="cta-row">
+        <a class="btn btn-verm" href="https://github.com/ivanegerev/snapbar/releases/latest/download/SnapBar.zip">Download for Mac ↓</a>
+        <a class="btn" href="#features">What it does</a>
+      </div>
+      <p class="cta-note">Free 7-day pro roll · press <kbd>⌃⇧4</kbd> and you're shooting</p>
+    </div>
+
+    <figure class="figure">
+      <span class="cropmark cm-tl"></span><span class="cropmark cm-tr"></span>
+      <span class="cropmark cm-bl"></span><span class="cropmark cm-br"></span>
+      <div class="popover">
+        <div class="pop-head">
+          <svg width="22" height="22" viewBox="0 0 42 42" style="color:var(--ink)"><use href="#mark"/></svg>
+          <b>SnapBar</b><span class="pop-badge">PRO</span>
+          <span class="dim">⚙&nbsp;&nbsp;⏻</span>
+        </div>
+        <div class="pop-label">CAPTURE</div>
+        <div class="tiles" style="position:relative">
+          <div class="tile">
+            <svg width="17" height="17" viewBox="0 0 20 20"><g class="g" fill="none" stroke-width="1.6" stroke-dasharray="3 2.4"><rect x="3" y="4" width="14" height="12" rx="1.5"/></g></svg>
+            <div class="t">Area</div><div class="k">⌃⇧4</div>
+          </div>
+          <div class="tile">
+            <svg width="17" height="17" viewBox="0 0 20 20"><g class="g" fill="none" stroke-width="1.6"><rect x="2.5" y="3.5" width="15" height="13" rx="2"/><path d="M2.5 7.5 h15"/></g></svg>
+            <div class="t">Window</div><div class="k">⌃⇧6</div>
+          </div>
+          <div class="tile">
+            <svg width="17" height="17" viewBox="0 0 20 20"><g class="g" fill="none" stroke-width="1.6"><rect x="2.5" y="3" width="15" height="11" rx="1.5"/><path d="M7 17 h6"/></g></svg>
+            <div class="t">Screen</div><div class="k">⌃⇧3</div>
+          </div>
+          <svg class="keeper-circle" width="120" height="76" viewBox="0 0 120 76" style="top:-10px; left:-14px">
+            <path d="M14 38 C10 16, 44 6, 66 10 C96 15, 112 28, 106 46 C100 64, 60 72, 34 66 C16 62, 8 52, 14 40"
+                  fill="none" stroke="#e14e1d" stroke-width="2.4" stroke-linecap="round" opacity=".9"/>
+          </svg>
+          <span class="keeper-note" style="top:-26px; left:96px">start here →</span>
+        </div>
+        <div class="pop-label">RECORD</div>
+        <div class="tiles two">
+          <div class="tile">
+            <svg width="17" height="17" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" fill="none" class="g" stroke-width="1.6"/><circle cx="10" cy="10" r="3" fill="#e14e1d"/></svg>
+            <div class="t">Area</div><div class="k">⌃⇧5</div>
+          </div>
+          <div class="tile">
+            <svg width="17" height="17" viewBox="0 0 20 20"><g class="g" fill="none" stroke-width="1.6"><rect x="2.5" y="3" width="15" height="11" rx="1.5"/><path d="M7 17 h6"/></g><circle cx="15" cy="12" r="2.6" fill="#e14e1d"/></svg>
+            <div class="t">Screen</div><div class="k">&nbsp;</div>
+          </div>
+        </div>
+        <div class="pop-label">TOOLS</div>
+        <div class="rowitem"><svg width="14" height="14" viewBox="0 0 20 20"><g class="g" stroke="#1a1713" fill="none" stroke-width="1.6"><path d="M4 6 V4 h3 M16 6 V4 h-3 M4 14 v2 h3 M16 14 v2 h-3"/><path d="M6 10 h8"/></g></svg> Copy Text (OCR) <span class="pro">PRO</span><span class="k">⌃⇧2</span></div>
+        <div class="rowitem"><svg width="14" height="14" viewBox="0 0 20 20"><g stroke="#1a1713" fill="none" stroke-width="1.6" stroke-linecap="round"><path d="M10 13 v5 M6 4 h8 l-1.5 5.5 2 3.5 H5.5 l2-3.5 z"/></g></svg> Pin Last Screenshot <span class="pro">PRO</span></div>
+        <div class="rowitem"><svg width="14" height="14" viewBox="0 0 20 20"><g stroke="#1a1713" fill="none" stroke-width="1.6" stroke-linecap="round"><path d="M4 16 l1-4 8.5-8.5 a1.8 1.8 0 0 1 3 3 L8 15 z"/></g></svg> Annotate Last Screenshot</div>
+        <div class="pop-label">RECENT</div>
+        <div class="pop-thumbs">
+          <div class="pop-thumb" data-n="SB-08"></div>
+          <div class="pop-thumb" data-n="SB-07"></div>
+          <div class="pop-thumb" data-n="SB-06"></div>
+          <div class="pop-thumb" data-n="SB-05"></div>
+        </div>
+      </div>
+      <figcaption class="figcap">FIG. 01 — the entire app, one click from the clock</figcaption>
+    </figure>
+  </div>
+</section>
+
+<div class="marquee" aria-hidden="true">
+  <div class="marquee-inner">
+    <span>AREA</span><span class="dot">●</span><span>WINDOW</span><span class="dot">●</span><span>SCREEN</span><span class="dot">●</span><span>REC</span><span class="dot">●</span><span>OCR</span><span class="dot">●</span><span>PIN</span><span class="dot">●</span><span>ANNOTATE</span><span class="dot">●</span><span>STEP NUMBERS</span><span class="dot">●</span><span>PIXELATE</span><span class="dot">●</span><span>BEAUTIFY</span><span class="dot">●</span>
+    <span>AREA</span><span class="dot">●</span><span>WINDOW</span><span class="dot">●</span><span>SCREEN</span><span class="dot">●</span><span>REC</span><span class="dot">●</span><span>OCR</span><span class="dot">●</span><span>PIN</span><span class="dot">●</span><span>ANNOTATE</span><span class="dot">●</span><span>STEP NUMBERS</span><span class="dot">●</span><span>PIXELATE</span><span class="dot">●</span><span>BEAUTIFY</span><span class="dot">●</span>
+  </div>
+</div>
+
+<section id="features" class="sec-rule">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">02</span>
+      <h2>The contact sheet</h2>
+      <span class="aside">Nine frames, no filler</span>
+    </div>
+    <div class="sheet">
+      <div class="cell">
+        <div class="fr">FR-01</div>
+        <svg width="26" height="26" viewBox="0 0 26 26"><g fill="none" stroke="#1a1713" stroke-width="1.8" stroke-dasharray="4 3"><rect x="4" y="5" width="18" height="15" rx="2"/></g></svg>
+        <h3>Pixel-perfect capture</h3>
+        <p>Area, window or full screen with the native crosshair. Retina and HDR aware, plus a self-timer for shots that need staging.</p>
+      </div>
+      <div class="cell">
+        <div class="fr">FR-02</div>
+        <svg width="26" height="26" viewBox="0 0 26 26"><circle cx="13" cy="13" r="9" fill="none" stroke="#1a1713" stroke-width="1.8"/><circle cx="13" cy="13" r="4" fill="#e14e1d"/></svg>
+        <h3>Screen recording</h3>
+        <p>Record a region or the whole display, with mic audio and click highlights if you want them. A timer counts in the menu bar.</p>
+      </div>
+      <div class="cell">
+        <div class="fr">FR-03</div>
+        <svg width="26" height="26" viewBox="0 0 26 26"><g stroke="#1a1713" fill="none" stroke-width="1.8" stroke-linecap="round"><path d="M5 21 l1.2-5 11-11 a2.3 2.3 0 0 1 3.3 3.3 l-11 11 z"/></g></svg>
+        <h3>Grease-pencil markup</h3>
+        <p>Arrows, boxes, highlighter, freehand, text — and auto-numbered steps for walkthroughs. Undo everything, save or copy out.</p>
+      </div>
+      <div class="cell">
+        <div class="fr">FR-04</div><span class="protag">PRO</span>
+        <svg width="26" height="26" viewBox="0 0 26 26"><g stroke="#1a1713" fill="none" stroke-width="1.8" stroke-linecap="round"><path d="M5 8 V5 h4 M21 8 V5 h-4 M5 18 v3 h4 M21 18 v3 h-4"/><path d="M8 13 h10"/></g></svg>
+        <h3>Copy text from screen</h3>
+        <p>OCR any region — error dialogs, code in a video, a serial number in a photo — straight to your clipboard. Runs offline, on-device.</p>
+      </div>
+      <div class="cell">
+        <div class="fr">FR-05</div><span class="protag">PRO</span>
+        <svg width="26" height="26" viewBox="0 0 26 26"><g stroke="#1a1713" fill="none" stroke-width="1.8" stroke-linecap="round"><path d="M13 16 v6 M8 4 h10 l-2 7 2.5 5 H7.5 l2.5-5 z"/></g></svg>
+        <h3>Pin to screen</h3>
+        <p>Float any shot above every window as a working reference. Drag it around; double-click when you're done with it.</p>
+      </div>
+      <div class="cell">
+        <div class="fr">FR-06</div><span class="protag">PRO</span>
+        <svg width="26" height="26" viewBox="0 0 26 26"><g stroke="#1a1713" fill="none" stroke-width="1.8"><rect x="4" y="4" width="18" height="18" rx="3"/><rect x="9" y="9" width="8" height="8" rx="1.5" fill="#e14e1d" stroke="none"/></g></svg>
+        <h3>Beautify for sharing</h3>
+        <p>One click adds padding, a backdrop, rounded corners and a shadow. Launch-post ready without opening a design tool.</p>
+      </div>
+      <div class="cell">
+        <div class="fr">FR-07</div><span class="protag">PRO</span>
+        <svg width="26" height="26" viewBox="0 0 26 26"><g fill="#1a1713"><rect x="5" y="5" width="4" height="4"/><rect x="13" y="5" width="4" height="4" opacity=".45"/><rect x="9" y="9" width="4" height="4" opacity=".7"/><rect x="17" y="9" width="4" height="4"/><rect x="5" y="13" width="4" height="4" opacity=".5"/><rect x="13" y="13" width="4" height="4"/><rect x="9" y="17" width="4" height="4"/><rect x="17" y="17" width="4" height="4" opacity=".4"/></g></svg>
+        <h3>Pixelate secrets</h3>
+        <p>Mosaic over emails, tokens and faces before anything leaves your Mac. The blur is baked into the pixels, not a layer.</p>
+      </div>
+      <div class="cell">
+        <div class="fr">FR-08</div>
+        <svg width="26" height="26" viewBox="0 0 26 26"><g stroke="#1a1713" fill="none" stroke-width="1.8"><rect x="4" y="6" width="18" height="14" rx="2"/><path d="M4 16 l5-4 4 3 5-5 4 4" stroke-linecap="round" stroke-linejoin="round"/></g></svg>
+        <h3>The floating frame</h3>
+        <p>Every capture drops into the corner — click to open, hover for annotate/pin/copy, or drag it straight into Slack or Figma.</p>
+      </div>
+      <div class="cell">
+        <div class="fr">FR-09</div>
+        <svg width="26" height="26" viewBox="0 0 26 26"><g stroke="#1a1713" fill="none" stroke-width="1.8" stroke-linecap="round"><path d="M4 8 h18 M4 13 h12 M4 18 h15"/></g></svg>
+        <h3>Kept in order</h3>
+        <p>A recent-captures strip in the menu, a folder you choose, PNG/JPEG/HEIC/PDF/TIFF, and a desktop-icons toggle for clean recordings.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing" class="sec-rule">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">03</span>
+      <h2>Pick your print</h2>
+      <span class="aside">7-day full trial first, always</span>
+    </div>
+    <div class="plans">
+      <div class="plan">
+        <h3>Free</h3>
+        <div class="price-line"><span class="price">$0</span></div>
+        <div class="per">forever, honestly</div>
+        <ul>
+          <li>Area, window &amp; screen capture</li>
+          <li>Screen recording with mic</li>
+          <li>Full markup editor</li>
+          <li>Floating frame &amp; history</li>
+          <li class="no">Copy text (OCR)</li>
+          <li class="no">Pin, Beautify &amp; Pixelate</li>
+        </ul>
+        <a class="btn" href="https://github.com/ivanegerev/snapbar/releases/latest/download/SnapBar.zip">Download Free</a>
+      </div>
+      <div class="plan keeper">
+        <svg class="keeper-ellipse" viewBox="0 0 340 420" preserveAspectRatio="none">
+          <path d="M28 210 C18 80, 120 14, 190 18 C280 23, 330 90, 326 210 C322 340, 250 405, 160 400 C70 396, 34 330, 30 220"
+                fill="none" stroke="#e14e1d" stroke-width="2.5" stroke-linecap="round" opacity=".55"/>
+        </svg>
+        <span class="plan-note">the keeper ↓</span>
+        <h3>Pro · Lifetime</h3>
+        <div class="price-line"><span class="price">$14.99</span></div>
+        <div class="per">one payment, every future update</div>
+        <ul>
+          <li>Everything in Free</li>
+          <li>OCR — copy text from screen</li>
+          <li>Pin screenshots on top</li>
+          <li>Beautify backdrops &amp; padding</li>
+          <li>Pixelate sensitive info</li>
+        </ul>
+        <a class="btn btn-verm" href="buy.html?plan=lifetime">Buy once</a>
+      </div>
+      <div class="plan">
+        <h3>Pro · Monthly</h3>
+        <div class="price-line"><span class="price">$1.99<small>/mo</small></span></div>
+        <div class="per">cancel anytime, same features</div>
+        <ul>
+          <li>Everything in Pro Lifetime</li>
+          <li>Tiny commitment</li>
+          <li>Switch to Lifetime whenever</li>
+        </ul>
+        <a class="btn" href="buy.html?plan=monthly">Subscribe</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">04</span>
+      <h2>Questions</h2>
+    </div>
+    <div class="faq">
+      <details open>
+        <summary><span class="qn">Q.01</span> How is this different from ⇧⌘5? <span class="plus">+</span></summary>
+        <p>SnapBar uses the same rock-solid macOS capture engine underneath, then adds the whole darkroom: instant markup with step numbers, OCR text grabbing, pinned reference shots, share-ready backdrops, a draggable floating frame, capture history and global hotkeys — one click from your menu bar.</p>
+      </details>
+      <details>
+        <summary><span class="qn">Q.02</span> Do my screenshots leave my Mac? <span class="plus">+</span></summary>
+        <p>No. Everything, including OCR, runs on-device. Captures go to the folder you pick and nowhere else. There's no account, no telemetry, no cloud.</p>
+      </details>
+      <details>
+        <summary><span class="qn">Q.03</span> What happens after the 7-day trial? <span class="plus">+</span></summary>
+        <p>Capture, recording, the markup editor and the floating frame stay free forever. The Pro tools — OCR, Pin, Beautify, Pixelate — lock until you buy a license, one-time or monthly.</p>
+      </details>
+      <details>
+        <summary><span class="qn">Q.04</span> Is the one-time purchase really lifetime? <span class="plus">+</span></summary>
+        <p>Yes. $14.99 once, every future update included. The monthly plan exists purely for people who prefer small payments — it's the same feature set.</p>
+      </details>
+      <details>
+        <summary><span class="qn">Q.05</span> Which Macs does it run on? <span class="plus">+</span></summary>
+        <p>macOS 13 Ventura or newer, Apple Silicon and Intel. It's a small native Swift app — about 4 MB on disk, no Electron, no background CPU burn.</p>
+      </details>
+      <details>
+        <summary><span class="qn">Q.06</span> What permissions does it need? <span class="plus">+</span></summary>
+        <p>Screen Recording — that's the whole point — and Microphone only if you turn on mic audio for recordings. macOS asks the first time, and that's it.</p>
+      </details>
+      <details>
+        <summary><span class="qn">Q.07</span> macOS says it "can't verify the developer"? <span class="plus">+</span></summary>
+        <p>SnapBar isn't notarized through Apple yet (that program costs $99/yr — it's on the list). First launch only: right-click SnapBar.app → <b>Open</b> → Open. The app is open source, so you can also read every line and build it yourself.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<footer id="download">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <div class="foot-word">SnapBar<span class="dot">.</span></div>
+        <div class="foot-col" style="margin-top:10px">Shot on a Mac, for Macs.</div>
+      </div>
+      <div class="foot-col">
+        <a href="#features">Features</a><br>
+        <a href="#pricing">Pricing</a><br>
+        <a href="#faq">Questions</a>
+      </div>
+      <div class="foot-col">
+        <a href="mailto:ivanegerev@icloud.com">Support</a><br>
+        <a href="#pricing">Download</a><br>
+        <span>v1.2 · macOS 13+</span>
+      </div>
+    </div>
+    <div class="foot-base">
+      <span>⌖ REG 42.1968 — SNAPBAR CONTACT SHEET EDITION</span>
+      <span>© 2026 Ivan Egerev</span>
+      <span>NO CLOUD · NO ACCOUNT · NO ELECTRON</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
