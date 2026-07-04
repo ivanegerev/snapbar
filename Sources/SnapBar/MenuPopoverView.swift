@@ -215,7 +215,7 @@ struct MenuPopoverView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                Text("V1.2")
+                Text("V1.3")
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .foregroundStyle(Brand.graphite.opacity(0.7))
             }
@@ -360,7 +360,9 @@ private struct RecentThumb: View {
         .onDrag { NSItemProvider(contentsOf: url) ?? NSItemProvider() }
         .contextMenu {
             Button("Open") { services.open(url) }
-            if !isMovie {
+            if isMovie {
+                Button("Edit Clip…") { services.editClip(url) }
+            } else {
                 Button("Annotate…") { services.annotate(url) }
                 Button("Pin to Screen") { services.pin(url) }
             }

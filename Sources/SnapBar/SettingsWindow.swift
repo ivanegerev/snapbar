@@ -7,6 +7,7 @@ struct SettingsView: View {
     @AppStorage("format") private var format = "png"
     @AppStorage("copyToClipboard") private var copyToClipboard = false
     @AppStorage("showThumbnail") private var showThumbnail = true
+    @AppStorage("openEditorAfterCapture") private var openEditorAfterCapture = true
     @AppStorage("playSound") private var playSound = true
     @AppStorage("windowShadow") private var windowShadow = true
     @AppStorage("showCursor") private var showCursor = true
@@ -37,7 +38,13 @@ struct SettingsView: View {
                     Text("TIFF").tag("tiff")
                 }
                 Toggle("Also copy screenshots to clipboard", isOn: $copyToClipboard)
+                Toggle("Open editor after each capture", isOn: $openEditorAfterCapture)
                 Toggle("Show floating thumbnail after capture", isOn: $showThumbnail)
+                if openEditorAfterCapture {
+                    Text("The editor replaces the thumbnail while enabled — screenshots open in markup, recordings in the clip trimmer.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Screenshots") {
