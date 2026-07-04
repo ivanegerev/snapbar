@@ -38,6 +38,10 @@ struct MenuPopoverView: View {
                         services.copyTextFromScreen()
                     }
                     hairline
+                    ToolRow(symbol: "eyedropper", title: "Pick Color from Screen", shortcut: nil, pro: false) {
+                        services.pickColor()
+                    }
+                    hairline
                     ToolRow(symbol: "pin", title: "Pin Last Screenshot", shortcut: nil, pro: !license.isPro) {
                         services.pinLastCapture()
                     }
@@ -215,7 +219,7 @@ struct MenuPopoverView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                Text("V1.3")
+                Text("V1.4")
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .foregroundStyle(Brand.graphite.opacity(0.7))
             }

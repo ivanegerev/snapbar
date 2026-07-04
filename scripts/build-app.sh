@@ -26,7 +26,12 @@ if [ ! -f "$ROOT/Resources/SnapBar.icns" ]; then
 fi
 cp "$ROOT/Resources/SnapBar.icns" "$APP/Contents/Resources/SnapBar.icns"
 
-echo "==> codesigning (ad-hoc)"
-codesign --force --sign - --identifier com.ivanegerev.snapbar "$APP"
+if security find-identity -p codesigning -v 2>/dev/null | grep -q "SnapBar Dev Signing"; then
+    echo "==> codesigning (SnapBar Dev Signing — stable identity, TCC grants survive rebuilds)"
+    codesign --force --sign "SnapBar Dev Signing" --identifier com.ivanegerev.snapbar "$APP"
+else
+    echo "==> codesigning (ad-hoc)"
+    codesign --force --sign - --identifier com.ivanegerev.snapbar "$APP"
+fi
 
 echo "==> done: $APP"
