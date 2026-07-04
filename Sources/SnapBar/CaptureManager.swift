@@ -16,9 +16,19 @@ final class CaptureManager {
     /// Called on the main thread with the finished file (screenshot or recording).
     var onCapture: ((URL) -> Void)?
 
+    /// Without Screen Recording permission, screencapture fails silently (or
+    /// produces black frames). Gate every capture and show the setup window
+    /// instead of doing nothing.
+    private static func ensureScreenPermission() -> Bool {
+        if ScreenPermission.granted { return true }
+        DispatchQueue.main.async { PermissionWindowController.shared.show() }
+        return false
+    }
+
     // MARK: - Stills
 
     func captureStill(_ kind: StillKind) {
+        guard Self.ensureScreenPermission() else { return }
         var args: [String] = []
         switch kind {
         case .area:
@@ -39,8 +49,15 @@ final class CaptureManager {
         let proc = makeProcess(args: args)
         proc.terminationHandler = { [weak self] _ in
             DispatchQueue.main.async {
-                // Interactive captures can be cancelled with Escape — no file, nothing to do.
-                guard FileManager.default.fileExists(atPath: url.path) else { return }
+                guard FileManager.default.fileExists(atPath: url.path) else {
+                    // Interactive captures can be cancelled with Escape — that's
+                    // normal. A missing file on a non-interactive capture isn't.
+                    if kind == .screen {
+                        Toast.show("Capture didn't complete — check Screen Recording permission", symbol: "exclamationmark.triangle", tint: .orange)
+                        PermissionWindowController.shared.show()
+                    }
+                    return
+                }
                 self?.finishStill(url: url)
             }
         }
@@ -61,6 +78,7 @@ final class CaptureManager {
 
     func startRecording(_ kind: RecordingKind) {
         guard !isRecording else { return }
+        guard Self.ensureScreenPermission() else { return }
 
         var args = ["-v"]
         if kind == .area { args.append("-Jvideo") }
@@ -79,7 +97,10 @@ final class CaptureManager {
                 self.recordingStartDate = nil
                 self.recordingProcess = nil
                 self.onRecordingStateChange?()
-                guard FileManager.default.fileExists(atPath: url.path) else { return }
+                guard FileManager.default.fileExists(atPath: url.path) else {
+                    Toast.show("Recording didn't save — check Screen Recording permission", symbol: "exclamationmark.triangle", tint: .orange)
+                    return
+                }
                 Recents.add(url)
                 self.onCapture?(url)
             }
