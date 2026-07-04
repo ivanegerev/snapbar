@@ -1,8 +1,26 @@
 # SnapBar store — payment setup
 
-Everything is wired except the two things only the account owner can create:
-a **Stripe account** and a **Cloudflare account** (both free to open; Stripe
-takes 2.9% + 30¢ per sale). Total setup is ~20 minutes.
+**Status: LIVE in Stripe test mode.** Products, prices and Payment Links exist;
+`docs/buy.html` redirects to them and `docs/thanks.html` issues license keys.
+Test checkout with card `4242 4242 4242 4242`, any future expiry, any CVC.
+
+- Lifetime $14.99 → https://buy.stripe.com/test_4gMcN456o0oX19q7TJgQE00
+- Monthly $1.99 → https://buy.stripe.com/test_3cI8wO8iA8Vt9FWa1RgQE01
+
+**To take real money:** switch the Stripe account to live mode, recreate the two
+Payment Links with a live key (same two API calls, see git history), and swap
+the URLs in `docs/buy.html`. The secret key is deliberately not stored in this
+repo — keep it in a keychain or env var.
+
+**Key delivery (current):** `thanks.html` derives the key client-side from the
+Stripe session id (SHA-256 → base-36 checksum format). Deterministic, so
+revisiting the link re-shows the same key. This is honor-system: it doesn't
+verify payment server-side — same trust level as the app's offline validation.
+
+**Key delivery (upgrade):** deploy `worker.js` to Cloudflare and set
+`WORKER_URL` in `thanks.html`; the page then verifies the session was actually
+paid via the Stripe API before issuing a key. Setup below (~15 minutes; the
+worker also needs a free Cloudflare account).
 
 ## How it works
 
