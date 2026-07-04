@@ -57,7 +57,11 @@ final class ThumbnailPanel: NSPanel {
             },
             onAnnotate: { [weak self] in
                 self?.dismiss()
-                services.annotate(url)
+                if isMovie {
+                    services.editClip(url)
+                } else {
+                    services.annotate(url)
+                }
             },
             onPin: { [weak self] in
                 self?.dismiss()
@@ -133,7 +137,9 @@ private struct ThumbnailView: View {
 
             if hovering {
                 HStack(spacing: 10) {
-                    if !isMovie {
+                    if isMovie {
+                        ActionButton(symbol: "timeline.selection", help: "Trim / edit clip", action: onAnnotate)
+                    } else {
                         ActionButton(symbol: "pencil.tip", help: "Annotate", action: onAnnotate)
                         ActionButton(symbol: "pin", help: "Pin to screen", action: onPin)
                     }

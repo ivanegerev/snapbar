@@ -301,43 +301,67 @@ struct EditorView: View {
     @ObservedObject private var license = LicenseManager.shared
     @FocusState private var textFieldFocused: Bool
 
+    /// nil = fit to window; otherwise an absolute zoom factor (1 = 100%).
+    @State private var zoomFactor: CGFloat?
+    @State private var fittedScale: CGFloat = 1
+
     private let swatches: [Color] = [.red, .orange, .yellow, .green, .blue, .purple, .white, .black]
+    private static let zoomSteps: [CGFloat] = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8]
 
     var body: some View {
         VStack(spacing: 0) {
             toolbar
             Divider()
             GeometryReader { geo in
-                let fit = fittedSize(in: geo.size)
-                ZStack {
-                    if model.beautifyOn {
-                        LinearGradient(
+                let fit = fitScale(in: geo.size)
+                let scale = zoomFactor ?? fit
+                let size = CGSize(width: model.imageSize.width * scale, height: model.imageSize.height * scale)
+                ScrollView([.horizontal, .vertical]) {
+                    canvas(displaySize: size)
+                        .frame(width: size.width, height: size.height)
+                        .clipShape(RoundedRectangle(cornerRadius: model.beautifyOn ? model.cornerRadius * scale : 0))
+                        .shadow(color: model.beautifyOn ? .black.opacity(0.4) : .clear, radius: 16, y: 6)
+                        .padding(model.beautifyOn ? 48 : 16)
+                        .frame(minWidth: geo.size.width, minHeight: geo.size.height)
+                }
+                .background(
+                    model.beautifyOn
+                        ? AnyView(LinearGradient(
                             colors: BackgroundPreset.all[model.backgroundIndex % BackgroundPreset.all.count].swiftUIColors,
                             startPoint: .topLeading, endPoint: .bottomTrailing
-                        )
-                    } else {
-                        Color(nsColor: .underPageBackgroundColor)
-                    }
-                    canvas(displaySize: fit)
-                        .frame(width: fit.width, height: fit.height)
-                        .clipShape(RoundedRectangle(cornerRadius: model.beautifyOn ? model.cornerRadius * (fit.width / model.imageSize.width) : 0))
-                        .shadow(color: model.beautifyOn ? .black.opacity(0.4) : .clear, radius: 16, y: 6)
-                }
-                .frame(width: geo.size.width, height: geo.size.height)
+                        ))
+                        : AnyView(Color(nsColor: .underPageBackgroundColor))
+                )
+                .onAppear { fittedScale = fit }
+                .onChange(of: geo.size) { newSize in fittedScale = fitScale(in: newSize) }
             }
             if model.beautifyOn {
                 Divider()
                 beautifyBar
             }
         }
-        .frame(minWidth: 760, minHeight: 480)
+        .frame(minWidth: 880, minHeight: 500)
     }
 
-    private func fittedSize(in container: CGSize) -> CGSize {
-        let inset: CGFloat = model.beautifyOn ? 64 : 24
-        let avail = CGSize(width: max(container.width - inset, 100), height: max(container.height - inset, 100))
-        let scale = min(avail.width / model.imageSize.width, avail.height / model.imageSize.height, 1)
-        return CGSize(width: model.imageSize.width * scale, height: model.imageSize.height * scale)
+    private func fitScale(in container: CGSize) -> CGFloat {
+        let inset: CGFloat = model.beautifyOn ? 96 : 32
+        let availW = max(container.width - inset, 100)
+        let availH = max(container.height - inset, 100)
+        return min(availW / model.imageSize.width, availH / model.imageSize.height, 1)
+    }
+
+    private var zoomLabel: String {
+        guard let z = zoomFactor else { return "FIT" }
+        return "\(Int((z * 100).rounded()))%"
+    }
+
+    private func zoomStep(_ direction: Int) {
+        let current = zoomFactor ?? fittedScale
+        if direction > 0 {
+            zoomFactor = Self.zoomSteps.first(where: { $0 > current * 1.01 }) ?? Self.zoomSteps.last
+        } else {
+            zoomFactor = Self.zoomSteps.last(where: { $0 < current * 0.99 }) ?? Self.zoomSteps.first
+        }
     }
 
     // MARK: Canvas
@@ -525,6 +549,36 @@ struct EditorView: View {
             }
             .buttonStyle(.bordered)
             .tint(model.beautifyOn ? Brand.vermillion : nil)
+
+            Divider().frame(height: 20)
+
+            HStack(spacing: 3) {
+                Button {
+                    zoomStep(-1)
+                } label: {
+                    Image(systemName: "minus.magnifyingglass")
+                }
+                .keyboardShortcut("-", modifiers: .command)
+                .help("Zoom out (⌘−)")
+
+                Text(zoomLabel)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .frame(width: 36)
+
+                Button {
+                    zoomStep(1)
+                } label: {
+                    Image(systemName: "plus.magnifyingglass")
+                }
+                .keyboardShortcut("=", modifiers: .command)
+                .help("Zoom in (⌘+)")
+
+                Button("Fit") {
+                    zoomFactor = nil
+                }
+                .keyboardShortcut("0", modifiers: .command)
+                .help("Fit to window (⌘0)")
+            }
 
             Spacer()
 

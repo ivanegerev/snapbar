@@ -7,6 +7,7 @@ enum Prefs {
         "format": "png",
         "copyToClipboard": false,
         "showThumbnail": true,
+        "openEditorAfterCapture": true,
         "playSound": true,
         "windowShadow": true,
         "showCursor": true,
@@ -24,6 +25,7 @@ enum Prefs {
     static var format: String { UserDefaults.standard.string(forKey: "format") ?? "png" }
     static var copyToClipboard: Bool { UserDefaults.standard.bool(forKey: "copyToClipboard") }
     static var showThumbnail: Bool { UserDefaults.standard.bool(forKey: "showThumbnail") }
+    static var openEditorAfterCapture: Bool { UserDefaults.standard.bool(forKey: "openEditorAfterCapture") }
     static var playSound: Bool { UserDefaults.standard.bool(forKey: "playSound") }
     static var windowShadow: Bool { UserDefaults.standard.bool(forKey: "windowShadow") }
     static var showCursor: Bool { UserDefaults.standard.bool(forKey: "showCursor") }

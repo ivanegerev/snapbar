@@ -29,7 +29,15 @@ final class AppServices: ObservableObject {
         capture.onCapture = { [weak self] url in
             guard let self else { return }
             self.recents = Recents.list()
-            if Prefs.showThumbnail {
+            if Prefs.openEditorAfterCapture {
+                // Straight into editing — the editor covers copy/save, so the
+                // floating thumbnail would just be noise on top of it.
+                if url.pathExtension.lowercased() == "mov" {
+                    ClipEditorWindowController.open(url)
+                } else {
+                    EditorWindowController.open(url)
+                }
+            } else if Prefs.showThumbnail {
                 ThumbnailPanel.show(for: url, services: self)
             }
         }
@@ -76,6 +84,11 @@ final class AppServices: ObservableObject {
     func annotate(_ url: URL) {
         closePopover?()
         EditorWindowController.open(url)
+    }
+
+    func editClip(_ url: URL) {
+        closePopover?()
+        ClipEditorWindowController.open(url)
     }
 
     func annotateLastCapture() {
