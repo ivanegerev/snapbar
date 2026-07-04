@@ -65,6 +65,10 @@ final class StatusItemController: NSObject {
 
     private func showContextMenu(from button: NSStatusBarButton) {
         let menu = NSMenu()
+        let about = NSMenuItem(title: "About SnapBar", action: #selector(openAbout), keyEquivalent: "")
+        about.target = self
+        menu.addItem(about)
+        menu.addItem(.separator())
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: "")
         settings.target = self
         menu.addItem(settings)
@@ -87,6 +91,7 @@ final class StatusItemController: NSObject {
 
     @objc private func openSettings() { SettingsWindowController.shared.show() }
     @objc private func openUpgrade() { UpgradeWindowController.shared.show() }
+    @objc private func openAbout() { AboutWindowController.shared.show() }
     @objc private func checkForUpdates() {
         NSWorkspace.shared.open(URL(string: "https://github.com/ivanegerev/snapbar/releases/latest")!)
     }

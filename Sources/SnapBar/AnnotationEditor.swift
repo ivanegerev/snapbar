@@ -5,7 +5,7 @@ import CoreImage
 // MARK: - Model
 
 enum AnnoTool: String, CaseIterable, Identifiable {
-    case arrow, line, rect, ellipse, highlight, freehand, text, step, pixelate
+    case arrow, line, rect, ellipse, highlight, freehand, text, step, pixelate, crop
 
     var id: String { rawValue }
 
@@ -20,6 +20,7 @@ enum AnnoTool: String, CaseIterable, Identifiable {
         case .text: return "textformat"
         case .step: return "1.circle"
         case .pixelate: return "checkerboard.rectangle"
+        case .crop: return "crop"
         }
     }
 
@@ -34,6 +35,7 @@ enum AnnoTool: String, CaseIterable, Identifiable {
         case .text: return "Text"
         case .step: return "Step Number"
         case .pixelate: return "Pixelate (Pro)"
+        case .crop: return "Crop"
         }
     }
 
@@ -97,6 +99,9 @@ final class EditorModel: ObservableObject {
     @Published var padding: CGFloat = 56
     @Published var cornerRadius: CGFloat = 14
 
+    /// Non-destructive crop, applied at render time. nil = full image.
+    @Published var cropRect: CGRect?
+
     // In-progress text annotation being typed.
     @Published var pendingTextAt: CGPoint?
     @Published var textInput = ""
@@ -144,7 +149,8 @@ final class EditorModel: ObservableObject {
 
     func renderFinal() -> NSImage {
         let pad = beautifyOn ? padding : 0
-        let outPointSize = CGSize(width: imageSize.width + pad * 2, height: imageSize.height + pad * 2)
+        let src = cropRect ?? CGRect(origin: .zero, size: imageSize)
+        let outPointSize = CGSize(width: src.width + pad * 2, height: src.height + pad * 2)
         let pxPerPoint = max(1, CGFloat(image.representations.map(\.pixelsWide).max() ?? Int(imageSize.width)) / imageSize.width)
 
         let rep = NSBitmapImageRep(
@@ -161,7 +167,9 @@ final class EditorModel: ObservableObject {
         NSGraphicsContext.current = gctx
         let cg = gctx.cgContext
 
-        let imgRect = NSRect(x: pad, y: pad, width: imageSize.width, height: imageSize.height)
+        let imgRect = NSRect(x: pad, y: pad, width: src.width, height: src.height)
+        // Source rect within the original image, bottom-left origin (for cropping).
+        let srcBL = NSRect(x: src.minX, y: imageSize.height - src.maxY, width: src.width, height: src.height)
 
         if beautifyOn {
             let preset = BackgroundPreset.all[backgroundIndex % BackgroundPreset.all.count]
@@ -176,16 +184,17 @@ final class EditorModel: ObservableObject {
 
             cg.saveGState()
             NSBezierPath(roundedRect: imgRect, xRadius: cornerRadius, yRadius: cornerRadius).addClip()
-            image.draw(in: imgRect)
+            image.draw(in: imgRect, from: srcBL, operation: .sourceOver, fraction: 1)
             cg.restoreGState()
         } else {
-            image.draw(in: imgRect)
+            image.draw(in: imgRect, from: srcBL, operation: .sourceOver, fraction: 1)
         }
 
-        // Annotations: convert from top-left image space into the padded, bottom-left canvas.
+        // Annotations: convert from top-left image space into the padded,
+        // crop-relative, bottom-left canvas.
         let h = imageSize.height
-        func cv(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x + pad, y: h - p.y + pad) }
-        func cvRect(_ r: CGRect) -> CGRect { CGRect(x: r.minX + pad, y: h - r.maxY + pad, width: r.width, height: r.height) }
+        func cv(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x - src.minX + pad, y: src.maxY - p.y + pad) }
+        func cvRect(_ r: CGRect) -> CGRect { CGRect(x: r.minX - src.minX + pad, y: src.maxY - r.maxY + pad, width: r.width, height: r.height) }
 
         for a in annotations {
             let ns = NSColor(a.color)
@@ -258,8 +267,10 @@ final class EditorModel: ObservableObject {
                 guard let pix = pixelatedImage else { break }
                 let dest = cvRect(a.rect)
                 // Source rect in the pixelated image, bottom-left origin.
-                let src = CGRect(x: a.rect.minX, y: h - a.rect.maxY, width: a.rect.width, height: a.rect.height)
-                pix.draw(in: dest, from: src, operation: .sourceOver, fraction: 1)
+                let pixSrc = CGRect(x: a.rect.minX, y: h - a.rect.maxY, width: a.rect.width, height: a.rect.height)
+                pix.draw(in: dest, from: pixSrc, operation: .sourceOver, fraction: 1)
+            case .crop:
+                break // crop is a model property, never stored as an annotation
             }
         }
 
@@ -373,9 +384,23 @@ struct EditorView: View {
                 .resizable()
                 .interpolation(.high)
 
-            Canvas { ctx, _ in
+            Canvas { ctx, canvasSize in
                 for a in model.annotations { draw(a, in: &ctx, scale: scale) }
                 if let cur = model.current { draw(cur, in: &ctx, scale: scale) }
+                if let crop = model.cropRect {
+                    let r = CGRect(
+                        x: crop.minX * scale, y: crop.minY * scale,
+                        width: crop.width * scale, height: crop.height * scale
+                    )
+                    var outside = Path(CGRect(origin: .zero, size: canvasSize))
+                    outside.addRect(r)
+                    ctx.fill(outside, with: .color(.black.opacity(0.4)), style: FillStyle(eoFill: true))
+                    ctx.stroke(
+                        Path(r),
+                        with: .color(Brand.vermillion),
+                        style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
+                    )
+                }
             }
             .allowsHitTesting(false)
 
@@ -418,6 +443,13 @@ struct EditorView: View {
             .onEnded { value in
                 let loc = CGPoint(x: value.location.x / scale, y: value.location.y / scale)
                 switch model.tool {
+                case .crop:
+                    if var cur = model.current {
+                        cur.end = loc
+                        let rect = cur.rect.intersection(CGRect(origin: .zero, size: model.imageSize))
+                        model.cropRect = (rect.width > 8 && rect.height > 8) ? rect : nil
+                    }
+                    model.current = nil
                 case .text:
                     model.commitPendingText()
                     model.pendingTextAt = loc
@@ -502,6 +534,13 @@ struct EditorView: View {
                 Image(nsImage: pix),
                 in: CGRect(origin: .zero, size: CGSize(width: model.imageSize.width * scale, height: model.imageSize.height * scale))
             )
+        case .crop:
+            // Live crop drag preview; the committed crop is drawn by the canvas.
+            ctx.stroke(
+                Path(rect),
+                with: .color(Brand.vermillion),
+                style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
+            )
         }
     }
 
@@ -549,6 +588,18 @@ struct EditorView: View {
             }
             .buttonStyle(.bordered)
             .tint(model.beautifyOn ? Brand.vermillion : nil)
+
+            if let crop = model.cropRect {
+                Button {
+                    model.cropRect = nil
+                } label: {
+                    Label("\(Int(crop.width))×\(Int(crop.height))", systemImage: "xmark")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                }
+                .buttonStyle(.bordered)
+                .tint(Brand.vermillion)
+                .help("Crop applied on save — click to clear")
+            }
 
             Divider().frame(height: 20)
 

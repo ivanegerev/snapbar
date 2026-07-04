@@ -91,6 +91,35 @@ final class AppServices: ObservableObject {
         ClipEditorWindowController.open(url)
     }
 
+    // MARK: - Color picker
+
+    private var colorSampler: NSColorSampler?
+
+    /// System eyedropper — pick any pixel on screen, hex lands on the clipboard.
+    func pickColor() {
+        closePopover?()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            let sampler = NSColorSampler()
+            self?.colorSampler = sampler
+            sampler.show { color in
+                DispatchQueue.main.async {
+                    self?.colorSampler = nil
+                    guard let color, let rgb = color.usingColorSpace(.sRGB) else { return }
+                    let hex = String(
+                        format: "#%02X%02X%02X",
+                        Int((rgb.redComponent * 255).rounded()),
+                        Int((rgb.greenComponent * 255).rounded()),
+                        Int((rgb.blueComponent * 255).rounded())
+                    )
+                    let pb = NSPasteboard.general
+                    pb.clearContents()
+                    pb.setString(hex, forType: .string)
+                    Toast.show("\(hex) copied", symbol: "eyedropper")
+                }
+            }
+        }
+    }
+
     func annotateLastCapture() {
         guard let url = recents.first(where: { $0.pathExtension.lowercased() != "mov" }) else {
             Toast.show("No screenshot to annotate yet", symbol: "pencil.slash", tint: .orange)
