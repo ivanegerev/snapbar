@@ -11,6 +11,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = LicenseManager.shared // stamps first-launch date for the trial
         statusController = StatusItemController(services: services)
         registerHotkeys()
+
+        // Walk the user through Screen Recording permission up front instead
+        // of letting the first capture fail silently.
+        if !ScreenPermission.granted {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                PermissionWindowController.shared.show()
+            }
+        }
     }
 
     /// ⌃⇧2/3/4/5/6 — deliberately Control instead of Command so they mirror the

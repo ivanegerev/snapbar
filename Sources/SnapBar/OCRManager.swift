@@ -5,6 +5,10 @@ import Vision
 /// the clipboard. The capture goes to a temp file and is deleted immediately.
 enum OCRManager {
     static func captureAndCopyText() {
+        guard ScreenPermission.granted else {
+            PermissionWindowController.shared.show()
+            return
+        }
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("snapbar-ocr-\(UUID().uuidString).png")
         let proc = Process()
