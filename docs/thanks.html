@@ -48,7 +48,9 @@
   <p class="mono-small">Keep this page or the Stripe receipt — the key is shown here any time you reopen this link.</p>
 </div>
 <script>
-  // Set after deploying store/worker.js (see store/README.md).
+  // Optional server-verified path: deploy store/worker.js and set its URL here.
+  // Until then keys are derived deterministically from the Stripe session id —
+  // same key on every revisit of this page.
   const WORKER_URL = "";
 
   const sessionId = new URLSearchParams(location.search).get("session_id");
@@ -56,26 +58,44 @@
   const subEl = document.getElementById("sub");
   const copyBtn = document.getElementById("copy");
 
+  const ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+  async function deriveKey(seed) {
+    const data = new TextEncoder().encode("snapbar-license-v1:" + seed);
+    const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", data));
+    const values = Array.from(hash.slice(0, 14), (b) => b % 36);
+    const sum = values.reduce((a, b) => a + b, 0);
+    values.push((36 - (sum % 36)) % 36);
+    const body = values.map((v) => ALPHABET[v]).join("");
+    return `SNAP-${body.slice(0, 5)}-${body.slice(5, 10)}-${body.slice(10, 15)}`;
+  }
+
+  function show(key) {
+    subEl.textContent = "Here's your license key — paste it into SnapBar:";
+    keyEl.textContent = key;
+    copyBtn.style.display = "inline-block";
+    copyBtn.onclick = () => { navigator.clipboard.writeText(key); copyBtn.textContent = "Copied ✓"; };
+  }
+
   async function load() {
-    if (!WORKER_URL || !sessionId) {
-      subEl.textContent = "Your license key arrives by email shortly after purchase.";
+    if (!sessionId) {
+      subEl.textContent = "This page shows your key right after checkout — it looks like you got here without one.";
       keyEl.textContent = "SNAP-#####-#####-#####";
       return;
     }
-    try {
-      const r = await fetch(`${WORKER_URL}/redeem?session_id=${encodeURIComponent(sessionId)}`);
-      const d = await r.json();
-      if (d.key) {
-        subEl.textContent = "Here's your license key — paste it into SnapBar:";
-        keyEl.textContent = d.key;
-        copyBtn.style.display = "inline-block";
-        copyBtn.onclick = () => { navigator.clipboard.writeText(d.key); copyBtn.textContent = "Copied ✓"; };
-      } else {
+    if (WORKER_URL) {
+      try {
+        const r = await fetch(`${WORKER_URL}/redeem?session_id=${encodeURIComponent(sessionId)}`);
+        const d = await r.json();
+        if (d.key) { show(d.key); return; }
         subEl.textContent = "We couldn't verify this purchase — reply to your Stripe receipt and a human will sort it out.";
+        return;
+      } catch {
+        subEl.textContent = "Network hiccup — refresh this page in a moment.";
+        return;
       }
-    } catch {
-      subEl.textContent = "Network hiccup — refresh this page in a moment.";
     }
+    show(await deriveKey(sessionId));
   }
   load();
 </script>

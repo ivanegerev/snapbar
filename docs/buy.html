@@ -44,9 +44,11 @@
   <a class="back" href="index.html">← back to the contact sheet</a>
 </div>
 <script>
-  // Once Stripe Payment Links exist (see store/README.md), paste them here and
-  // this page becomes a pure redirect.
-  const PAYMENT_LINKS = { lifetime: "", monthly: "" };
+  // Stripe Payment Links (test mode — swap for live-mode links at launch).
+  const PAYMENT_LINKS = {
+    lifetime: "https://buy.stripe.com/test_4gMcN456o0oX19q7TJgQE00",
+    monthly: "https://buy.stripe.com/test_3cI8wO8iA8Vt9FWa1RgQE01",
+  };
 
   const plan = new URLSearchParams(location.search).get("plan") === "monthly" ? "monthly" : "lifetime";
   document.getElementById("plan-label").textContent =
