@@ -5,7 +5,7 @@ import CoreImage
 // MARK: - Model
 
 enum AnnoTool: String, CaseIterable, Identifiable {
-    case arrow, line, rect, ellipse, highlight, freehand, text, step, pixelate, crop
+    case arrow, line, rect, ellipse, highlight, freehand, text, step, redact, pixelate, crop
 
     var id: String { rawValue }
 
@@ -19,6 +19,7 @@ enum AnnoTool: String, CaseIterable, Identifiable {
         case .freehand: return "scribble"
         case .text: return "textformat"
         case .step: return "1.circle"
+        case .redact: return "rectangle.fill"
         case .pixelate: return "checkerboard.rectangle"
         case .crop: return "crop"
         }
@@ -34,6 +35,7 @@ enum AnnoTool: String, CaseIterable, Identifiable {
         case .freehand: return "Draw"
         case .text: return "Text"
         case .step: return "Step Number"
+        case .redact: return "Redact"
         case .pixelate: return "Pixelate (Pro)"
         case .crop: return "Crop"
         }
@@ -263,6 +265,9 @@ final class EditorModel: ObservableObject {
                 ])
                 let size = attr.size()
                 attr.draw(at: CGPoint(x: center.x - size.width / 2, y: center.y - size.height / 2))
+            case .redact:
+                NSColor.black.setFill()
+                NSBezierPath(roundedRect: cvRect(a.rect), xRadius: 2, yRadius: 2).fill()
             case .pixelate:
                 guard let pix = pixelatedImage else { break }
                 let dest = cvRect(a.rect)
@@ -526,6 +531,8 @@ struct EditorView: View {
                 Text("\(a.number)").font(.system(size: r * 1.1, weight: .bold)).foregroundColor(.white),
                 at: c, anchor: .center
             )
+        case .redact:
+            ctx.fill(Path(roundedRect: rect, cornerRadius: 2), with: .color(.black))
         case .pixelate:
             guard let pix = model.pixelatedImage else { break }
             var clipped = ctx

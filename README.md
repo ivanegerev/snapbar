@@ -28,6 +28,13 @@ menu bar, stays out of your way.
   shots in one click *(Pro)*
 - **Pixelate** sensitive info in the editor *(Pro)*
 - **Hide desktop icons** toggle for clean recordings
+- **Capture History** ⌃⇧H — searchable grid of every capture with annotate /
+  pin / copy / trash
+- **Redact** (solid black) and **Crop** tools in the editor, plus zoom (⌘+/−/0)
+- **Clip editor** for recordings — QuickTime-style trim + GIF export *(Pro)*
+- **Pick Color from Screen** ⌃⇧C — system eyedropper, hex to clipboard
+- **Auto-tidy** — optionally trash captures older than 7/30/90 days
+- Custom file name prefixes, daily update check, "Open With SnapBar" from Finder
 - **Floating thumbnail** after every capture — click to open, hover for quick
   actions (annotate / pin / copy), or drag it straight into Slack, Mail, Figma
 - **Clipboard copy**, configurable save folder, PNG/JPEG/HEIC/PDF/TIFF formats

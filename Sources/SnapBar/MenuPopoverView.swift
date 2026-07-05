@@ -38,16 +38,20 @@ struct MenuPopoverView: View {
                         services.copyTextFromScreen()
                     }
                     hairline
-                    ToolRow(symbol: "eyedropper", title: "Pick Color from Screen", shortcut: nil, pro: false) {
+                    ToolRow(symbol: "eyedropper", title: "Pick Color from Screen", shortcut: "⌃⇧C", pro: false) {
                         services.pickColor()
                     }
                     hairline
-                    ToolRow(symbol: "pin", title: "Pin Last Screenshot", shortcut: nil, pro: !license.isPro) {
+                    ToolRow(symbol: "pin", title: "Pin Last Screenshot", shortcut: "⌃⇧P", pro: !license.isPro) {
                         services.pinLastCapture()
                     }
                     hairline
-                    ToolRow(symbol: "pencil.tip.crop.circle", title: "Annotate Last Screenshot", shortcut: nil, pro: false) {
+                    ToolRow(symbol: "pencil.tip.crop.circle", title: "Annotate Last Screenshot", shortcut: "⌃⇧E", pro: false) {
                         services.annotateLastCapture()
+                    }
+                    hairline
+                    ToolRow(symbol: "clock.arrow.circlepath", title: "Capture History", shortcut: "⌃⇧H", pro: false) {
+                        services.openHistory()
                     }
                     hairline
                     ToolRow(
@@ -219,7 +223,7 @@ struct MenuPopoverView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                Text("V1.4")
+                Text("V1.5")
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .foregroundStyle(Brand.graphite.opacity(0.7))
             }

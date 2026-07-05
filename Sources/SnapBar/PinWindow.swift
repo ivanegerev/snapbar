@@ -53,7 +53,8 @@ final class PinWindow: NSPanel {
                 pb.writeObjects([image])
                 Toast.show("Image copied")
             },
-            onReveal: { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+            onReveal: { NSWorkspace.shared.activateFileViewerSelecting([url]) },
+            onOpacity: { [weak self] value in self?.animator().alphaValue = value }
         )
         contentView = NSHostingView(rootView: root)
     }
@@ -69,6 +70,7 @@ private struct PinView: View {
     let onClose: () -> Void
     let onCopy: () -> Void
     let onReveal: () -> Void
+    let onOpacity: (CGFloat) -> Void
 
     @State private var hovering = false
 
@@ -95,6 +97,12 @@ private struct PinView: View {
         .contextMenu {
             Button("Copy Image", action: onCopy)
             Button("Reveal in Finder", action: onReveal)
+            Menu("Opacity") {
+                Button("100%") { onOpacity(1.0) }
+                Button("75%") { onOpacity(0.75) }
+                Button("50%") { onOpacity(0.5) }
+                Button("25%") { onOpacity(0.25) }
+            }
             Divider()
             Button("Close Pin", action: onClose)
         }
