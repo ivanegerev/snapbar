@@ -15,6 +15,11 @@ enum Prefs {
         "recordMicrophone": false,
         "showClicks": false,
         "recentCaptures": [String](),
+        "screenshotPrefix": "Screenshot",
+        "recordingPrefix": "Screen Recording",
+        "autoCleanupDays": 0,
+        "autoCheckUpdates": true,
+        "hasOnboarded": false,
     ]
 
     static func register() {
@@ -32,6 +37,20 @@ enum Prefs {
     static var delaySeconds: Int { UserDefaults.standard.integer(forKey: "delaySeconds") }
     static var recordMicrophone: Bool { UserDefaults.standard.bool(forKey: "recordMicrophone") }
     static var showClicks: Bool { UserDefaults.standard.bool(forKey: "showClicks") }
+    static var screenshotPrefix: String {
+        let raw = UserDefaults.standard.string(forKey: "screenshotPrefix") ?? "Screenshot"
+        return raw.trimmingCharacters(in: .whitespaces).isEmpty ? "Screenshot" : raw
+    }
+    static var recordingPrefix: String {
+        let raw = UserDefaults.standard.string(forKey: "recordingPrefix") ?? "Screen Recording"
+        return raw.trimmingCharacters(in: .whitespaces).isEmpty ? "Screen Recording" : raw
+    }
+    static var autoCleanupDays: Int { UserDefaults.standard.integer(forKey: "autoCleanupDays") }
+    static var autoCheckUpdates: Bool { UserDefaults.standard.bool(forKey: "autoCheckUpdates") }
+    static var hasOnboarded: Bool {
+        get { UserDefaults.standard.bool(forKey: "hasOnboarded") }
+        set { UserDefaults.standard.set(newValue, forKey: "hasOnboarded") }
+    }
 
     static var saveDirURL: URL {
         let url = URL(fileURLWithPath: (saveDir as NSString).expandingTildeInPath, isDirectory: true)
@@ -72,6 +91,12 @@ enum Recents {
         let paths = UserDefaults.standard.stringArray(forKey: key) ?? []
         return paths.filter { FileManager.default.fileExists(atPath: $0) }
             .map { URL(fileURLWithPath: $0) }
+    }
+
+    static func remove(_ url: URL) {
+        var paths = UserDefaults.standard.stringArray(forKey: key) ?? []
+        paths.removeAll { $0 == url.path }
+        UserDefaults.standard.set(paths, forKey: key)
     }
 
     static func clear() {

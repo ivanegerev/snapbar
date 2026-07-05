@@ -14,6 +14,10 @@ struct SettingsView: View {
     @AppStorage("delaySeconds") private var delaySeconds = 0
     @AppStorage("recordMicrophone") private var recordMicrophone = false
     @AppStorage("showClicks") private var showClicks = false
+    @AppStorage("screenshotPrefix") private var screenshotPrefix = "Screenshot"
+    @AppStorage("recordingPrefix") private var recordingPrefix = "Screen Recording"
+    @AppStorage("autoCleanupDays") private var autoCleanupDays = 0
+    @AppStorage("autoCheckUpdates") private var autoCheckUpdates = true
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @ObservedObject private var license = LicenseManager.shared
@@ -36,6 +40,19 @@ struct SettingsView: View {
                     Text("HEIC").tag("heic")
                     Text("PDF").tag("pdf")
                     Text("TIFF").tag("tiff")
+                }
+                TextField("Screenshot file name", text: $screenshotPrefix, prompt: Text("Screenshot"))
+                TextField("Recording file name", text: $recordingPrefix, prompt: Text("Screen Recording"))
+                Picker("Auto-tidy old captures", selection: $autoCleanupDays) {
+                    Text("Never").tag(0)
+                    Text("After 7 days").tag(7)
+                    Text("After 30 days").tag(30)
+                    Text("After 90 days").tag(90)
+                }
+                if autoCleanupDays > 0 {
+                    Text("Captures older than \(autoCleanupDays) days are moved to the Trash at launch — only files matching the names above.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 Toggle("Also copy screenshots to clipboard", isOn: $copyToClipboard)
                 Toggle("Open editor after each capture", isOn: $openEditorAfterCapture)
@@ -73,8 +90,15 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Shortcuts") {
+                LabeledContent("Capture") { Text("⌃⇧4 area · ⌃⇧6 window · ⌃⇧3 screen").foregroundStyle(.secondary) }
+                LabeledContent("Record") { Text("⌃⇧5 start / stop").foregroundStyle(.secondary) }
+                LabeledContent("Tools") { Text("⌃⇧2 OCR · ⌃⇧C color · ⌃⇧P pin · ⌃⇧E annotate · ⌃⇧H history").foregroundStyle(.secondary) }
+            }
+
             Section("General") {
                 Toggle("Play capture sound", isOn: $playSound)
+                Toggle("Check for updates daily", isOn: $autoCheckUpdates)
                 Toggle("Launch SnapBar at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { enabled in
                         do {

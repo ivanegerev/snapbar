@@ -18,6 +18,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 PermissionWindowController.shared.show()
             }
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                WelcomeWindowController.shared.showIfNeeded()
+            }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            self?.services.runAutoCleanup()
+            self?.services.checkForUpdatesIfDue()
+        }
+    }
+
+    /// "Open With → SnapBar" from Finder: images land in the markup editor,
+    /// movies in the clip trimmer.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            if ["mov", "mp4"].contains(url.pathExtension.lowercased()) {
+                ClipEditorWindowController.open(url)
+            } else {
+                EditorWindowController.open(url)
+            }
         }
     }
 
@@ -44,6 +65,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         hotkeys.register(keyCode: kVK_ANSI_2, modifiers: ctrlShift) { [weak self] in
             self?.services.copyTextFromScreen()
+        }
+        hotkeys.register(keyCode: kVK_ANSI_C, modifiers: ctrlShift) { [weak self] in
+            self?.services.pickColor()
+        }
+        hotkeys.register(keyCode: kVK_ANSI_P, modifiers: ctrlShift) { [weak self] in
+            self?.services.pinLastCapture()
+        }
+        hotkeys.register(keyCode: kVK_ANSI_E, modifiers: ctrlShift) { [weak self] in
+            self?.services.annotateLastCapture()
+        }
+        hotkeys.register(keyCode: kVK_ANSI_H, modifiers: ctrlShift) { [weak self] in
+            self?.services.openHistory()
         }
     }
 

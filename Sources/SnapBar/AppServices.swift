@@ -7,6 +7,9 @@ import ImageIO
 final class AppServices: ObservableObject {
     static let shared = AppServices()
 
+    /// Posted whenever files in the capture folder change (new capture, trash, cleanup).
+    static let capturesChanged = Notification.Name("SnapBarCapturesChanged")
+
     let capture = CaptureManager()
 
     @Published private(set) var isRecording = false
@@ -29,6 +32,7 @@ final class AppServices: ObservableObject {
         capture.onCapture = { [weak self] url in
             guard let self else { return }
             self.recents = Recents.list()
+            NotificationCenter.default.post(name: Self.capturesChanged, object: nil)
             if Prefs.openEditorAfterCapture {
                 // Straight into editing — the editor covers copy/save, so the
                 // floating thumbnail would just be noise on top of it.
@@ -152,6 +156,98 @@ final class AppServices: ObservableObject {
     func openSaveFolder() {
         closePopover?()
         NSWorkspace.shared.open(Prefs.saveDirURL)
+    }
+
+    func openHistory() {
+        closePopover?()
+        HistoryWindowController.shared.show()
+    }
+
+    func copyPath(_ url: URL) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(url.path, forType: .string)
+        Toast.show("Path copied")
+    }
+
+    func trash(_ url: URL) {
+        NSWorkspace.shared.recycle([url]) { [weak self] _, error in
+            DispatchQueue.main.async {
+                guard error == nil else {
+                    Toast.show("Couldn't move to Trash", symbol: "exclamationmark.triangle", tint: .orange)
+                    return
+                }
+                Recents.remove(url)
+                self?.recents = Recents.list()
+                self?.thumbCache[url] = nil
+                Toast.show("Moved to Trash", symbol: "trash")
+                NotificationCenter.default.post(name: Self.capturesChanged, object: nil)
+            }
+        }
+    }
+
+    // MARK: - Housekeeping
+
+    /// Trash captures older than the configured age (only files matching the
+    /// app's own naming prefixes — never other files in the folder).
+    func runAutoCleanup() {
+        let days = Prefs.autoCleanupDays
+        guard days > 0 else { return }
+        let cutoff = Date().addingTimeInterval(-Double(days) * 86_400)
+        let prefixes = [Prefs.screenshotPrefix, Prefs.recordingPrefix]
+        let dir = Prefs.saveDirURL
+
+        DispatchQueue.global(qos: .utility).async {
+            let urls = (try? FileManager.default.contentsOfDirectory(
+                at: dir, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]
+            )) ?? []
+            let old = urls.filter { url in
+                guard prefixes.contains(where: { url.lastPathComponent.hasPrefix($0 + " ") }) else { return false }
+                let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                    .contentModificationDate ?? Date()
+                return date < cutoff
+            }
+            guard !old.isEmpty else { return }
+            DispatchQueue.main.async {
+                NSWorkspace.shared.recycle(old) { _, error in
+                    guard error == nil else { return }
+                    Toast.show("Tidied \(old.count) old capture\(old.count == 1 ? "" : "s") into the Trash", symbol: "trash")
+                    NotificationCenter.default.post(name: Self.capturesChanged, object: nil)
+                }
+            }
+        }
+    }
+
+    /// Once a day, see if a newer release is out (GitHub is the update channel).
+    func checkForUpdatesIfDue() {
+        guard Prefs.autoCheckUpdates else { return }
+        let last = UserDefaults.standard.object(forKey: "lastUpdateCheck") as? Date ?? .distantPast
+        guard Date().timeIntervalSince(last) > 86_400 * 0.9 else { return }
+        UserDefaults.standard.set(Date(), forKey: "lastUpdateCheck")
+
+        let url = URL(string: "https://api.github.com/repos/ivanegerev/snapbar/releases/latest")!
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            guard let data,
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let tag = obj["tag_name"] as? String else { return }
+            let remote = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+            let local = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+            guard Self.version(remote, isNewerThan: local) else { return }
+            DispatchQueue.main.async {
+                Toast.show("SnapBar \(tag) is out — right-click the menu icon → Check for Updates", symbol: "arrow.down.circle", tint: .blue)
+            }
+        }.resume()
+    }
+
+    private static func version(_ a: String, isNewerThan b: String) -> Bool {
+        let av = a.split(separator: ".").compactMap { Int($0) }
+        let bv = b.split(separator: ".").compactMap { Int($0) }
+        for i in 0..<max(av.count, bv.count) {
+            let x = i < av.count ? av[i] : 0
+            let y = i < bv.count ? bv[i] : 0
+            if x != y { return x > y }
+        }
+        return false
     }
 
     func clearRecents() {
