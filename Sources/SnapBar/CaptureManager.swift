@@ -27,7 +27,7 @@ final class CaptureManager {
 
     // MARK: - Stills
 
-    func captureStill(_ kind: StillKind) {
+    func captureStill(_ kind: StillKind, delaySeconds: Int? = nil) {
         guard Self.ensureScreenPermission() else { return }
         var args: [String] = []
         switch kind {
@@ -40,16 +40,25 @@ final class CaptureManager {
             if Prefs.showCursor { args.append("-C") }
         }
         if !Prefs.playSound { args.append("-x") }
-        if Prefs.delaySeconds > 0 { args.append("-T\(Prefs.delaySeconds)") }
+        let delay = delaySeconds ?? Prefs.delaySeconds
+        if delay > 0 { args.append("-T\(delay)") }
         args += ["-t", Prefs.format]
 
-        let url = Prefs.newFileURL(prefix: Prefs.screenshotPrefix, ext: Prefs.format)
-        args.append(url.path)
+        // Full-screen capture writes one file per display.
+        var urls = [Prefs.newFileURL(prefix: Prefs.screenshotPrefix, ext: Prefs.format)]
+        if kind == .screen {
+            let screens = max(NSScreen.screens.count, 1)
+            for i in 2...max(screens, 2) where i <= screens {
+                urls.append(Prefs.newFileURL(prefix: "\(Prefs.screenshotPrefix) (Display \(i))", ext: Prefs.format))
+            }
+        }
+        args += urls.map(\.path)
 
         let proc = makeProcess(args: args)
         proc.terminationHandler = { [weak self] _ in
             DispatchQueue.main.async {
-                guard FileManager.default.fileExists(atPath: url.path) else {
+                let saved = urls.filter { FileManager.default.fileExists(atPath: $0.path) }
+                guard let first = saved.first else {
                     // Interactive captures can be cancelled with Escape — that's
                     // normal. A missing file on a non-interactive capture isn't.
                     if kind == .screen {
@@ -58,7 +67,10 @@ final class CaptureManager {
                     }
                     return
                 }
-                self?.finishStill(url: url)
+                // Secondary displays go straight to recents; the primary shot
+                // drives the thumbnail/editor flow.
+                for extra in saved.dropFirst() { Recents.add(extra) }
+                self?.finishStill(url: first)
             }
         }
         try? proc.run()
