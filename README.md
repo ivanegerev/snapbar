@@ -35,6 +35,10 @@ menu bar, stays out of your way.
 - **Pick Color from Screen** ⌃⇧C — system eyedropper, hex to clipboard
 - **Auto-tidy** — optionally trash captures older than 7/30/90 days
 - Custom file name prefixes, daily update check, "Open With SnapBar" from Finder
+- **Scan QR Code** — select it on screen, payload copied, links open *(Pro)*
+- **Multi-display** full-screen capture (one file per display)
+- **Annotate Clipboard Image** and timed screen capture (right-click the
+  Screen tile for 3/5/10 s)
 - **Floating thumbnail** after every capture — click to open, hover for quick
   actions (annotate / pin / copy), or drag it straight into Slack, Mail, Figma
 - **Clipboard copy**, configurable save folder, PNG/JPEG/HEIC/PDF/TIFF formats

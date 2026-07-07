@@ -18,6 +18,11 @@ struct MenuPopoverView: View {
                     CaptureTile(symbol: "rectangle.dashed", title: "Area", shortcut: "⌃⇧4") { services.captureArea() }
                     CaptureTile(symbol: "macwindow", title: "Window", shortcut: "⌃⇧6") { services.captureWindow() }
                     CaptureTile(symbol: "rectangle.inset.filled", title: "Screen", shortcut: "⌃⇧3") { services.captureScreen() }
+                        .contextMenu {
+                            Button("Capture in 3 seconds") { services.captureScreen(after: 3) }
+                            Button("Capture in 5 seconds") { services.captureScreen(after: 5) }
+                            Button("Capture in 10 seconds") { services.captureScreen(after: 10) }
+                        }
                 }
             }
 
@@ -36,6 +41,10 @@ struct MenuPopoverView: View {
                 VStack(spacing: 0) {
                     ToolRow(symbol: "text.viewfinder", title: "Copy Text (OCR)", shortcut: "⌃⇧2", pro: !license.isPro) {
                         services.copyTextFromScreen()
+                    }
+                    hairline
+                    ToolRow(symbol: "qrcode.viewfinder", title: "Scan QR Code", shortcut: nil, pro: !license.isPro) {
+                        services.scanQRCode()
                     }
                     hairline
                     ToolRow(symbol: "eyedropper", title: "Pick Color from Screen", shortcut: "⌃⇧C", pro: false) {
@@ -223,7 +232,7 @@ struct MenuPopoverView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                Text("V1.5")
+                Text("V1.6")
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .foregroundStyle(Brand.graphite.opacity(0.7))
             }

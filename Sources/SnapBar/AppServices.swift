@@ -57,6 +57,9 @@ final class AppServices: ObservableObject {
     func captureArea() { afterPopoverCloses { self.capture.captureStill(.area) } }
     func captureWindow() { afterPopoverCloses { self.capture.captureStill(.window) } }
     func captureScreen() { afterPopoverCloses { self.capture.captureStill(.screen) } }
+    func captureScreen(after seconds: Int) {
+        afterPopoverCloses { self.capture.captureStill(.screen, delaySeconds: seconds) }
+    }
     func recordArea() { afterPopoverCloses { self.capture.startRecording(.area) } }
     func recordScreen() { afterPopoverCloses { self.capture.startRecording(.screen) } }
     func stopRecording() {
@@ -69,6 +72,35 @@ final class AppServices: ObservableObject {
     func copyTextFromScreen() {
         guard requirePro() else { return }
         afterPopoverCloses { OCRManager.captureAndCopyText() }
+    }
+
+    func scanQRCode() {
+        guard requirePro() else { return }
+        afterPopoverCloses { QRManager.scanFromScreen() }
+    }
+
+    /// Paste an image from the clipboard into the markup editor.
+    func annotateClipboardImage() {
+        closePopover?()
+        guard let image = NSPasteboard.general.readObjects(forClasses: [NSImage.self])?.first as? NSImage,
+              let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:])
+        else {
+            Toast.show("No image on the clipboard", symbol: "clipboard", tint: .orange)
+            return
+        }
+        let url = Prefs.newFileURL(prefix: "Pasted", ext: "png")
+        do {
+            try png.write(to: url)
+        } catch {
+            Toast.show("Couldn't save the pasted image", symbol: "exclamationmark.triangle", tint: .orange)
+            return
+        }
+        Recents.add(url)
+        recents = Recents.list()
+        NotificationCenter.default.post(name: Self.capturesChanged, object: nil)
+        EditorWindowController.open(url)
     }
 
     func pin(_ url: URL) {

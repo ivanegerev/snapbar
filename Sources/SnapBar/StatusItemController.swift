@@ -76,6 +76,13 @@ final class StatusItemController: NSObject {
         upgrade.target = self
         menu.addItem(upgrade)
         menu.addItem(.separator())
+        let clipboard = NSMenuItem(title: "Annotate Clipboard Image", action: #selector(annotateClipboard), keyEquivalent: "")
+        clipboard.target = self
+        menu.addItem(clipboard)
+        let history = NSMenuItem(title: "Capture History…", action: #selector(openHistory), keyEquivalent: "")
+        history.target = self
+        menu.addItem(history)
+        menu.addItem(.separator())
         let updates = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
         updates.target = self
         menu.addItem(updates)
@@ -92,6 +99,8 @@ final class StatusItemController: NSObject {
     @objc private func openSettings() { SettingsWindowController.shared.show() }
     @objc private func openUpgrade() { UpgradeWindowController.shared.show() }
     @objc private func openAbout() { AboutWindowController.shared.show() }
+    @objc private func annotateClipboard() { services.annotateClipboardImage() }
+    @objc private func openHistory() { services.openHistory() }
     @objc private func checkForUpdates() {
         NSWorkspace.shared.open(URL(string: "https://github.com/ivanegerev/snapbar/releases/latest")!)
     }
