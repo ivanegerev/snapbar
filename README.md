@@ -47,7 +47,7 @@ menu bar, stays out of your way.
 ## SnapBar Pro
 
 Full 7-day trial on first launch. After that, Pro tools unlock with a license key —
-$14.99 one-time or $1.99/month (both issue the same key format). Keys are validated
+$19.99 one-time or $2.99/month (both issue the same key format). Keys are validated
 offline (`LicenseManager.swift`); generate dev keys with
 `swift scripts/make-license.swift`. The Buy buttons point at placeholder
 `snapbar.app/buy/*` URLs — wire them to a Paddle / Lemon Squeezy / Stripe checkout

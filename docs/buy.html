@@ -39,20 +39,22 @@
     <p>Checkout for <span class="plan-tag" id="plan-label">SNAPBAR PRO</span> goes live very shortly.
        Meanwhile the 7-day trial is on us — and if you want a key today, just ask:</p>
     <a class="btn" id="mail" href="mailto:ivanegerev@icloud.com?subject=SnapBar%20Pro">Email for a key</a>
-    <p class="note">One-time $14.99 · or $1.99/mo · same features</p>
+    <p class="note">One-time $19.99 · or $2.99/mo · same features</p>
   </div>
   <a class="back" href="index.html">← back to the contact sheet</a>
 </div>
 <script>
-  // Stripe Payment Links (test mode — swap for live-mode links at launch).
-  const PAYMENT_LINKS = {
-    lifetime: "https://buy.stripe.com/test_4gMcN456o0oX19q7TJgQE00",
-    monthly: "https://buy.stripe.com/test_3cI8wO8iA8Vt9FWa1RgQE01",
-  };
+  // Stripe Payment Links. Empty = no redirect, so the page above (trial +
+  // "email for a key") is what visitors see. Fill both in with LIVE-mode links
+  // to switch checkout on; test-mode links must never ship here, because they
+  // decline every real card on a page that looks like a real store.
+  //   lifetime: "https://buy.stripe.com/xxxxxxxx",
+  //   monthly:  "https://buy.stripe.com/xxxxxxxx",
+  const PAYMENT_LINKS = {};
 
   const plan = new URLSearchParams(location.search).get("plan") === "monthly" ? "monthly" : "lifetime";
   document.getElementById("plan-label").textContent =
-    plan === "monthly" ? "SNAPBAR PRO · MONTHLY $1.99" : "SNAPBAR PRO · LIFETIME $14.99";
+    plan === "monthly" ? "SNAPBAR PRO · MONTHLY $2.99" : "SNAPBAR PRO · LIFETIME $19.99";
   document.getElementById("mail").href =
     `mailto:ivanegerev@icloud.com?subject=SnapBar%20Pro%20(${plan})`;
 

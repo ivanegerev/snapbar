@@ -86,14 +86,14 @@ struct UpgradeView: View {
         HStack(spacing: 14) {
             pricingCard(
                 title: "Lifetime",
-                price: "$14.99",
+                price: "$19.99",
                 caption: "One-time payment.\nYours forever.",
                 highlighted: true,
                 url: "https://ivanegerev.github.io/snapbar/buy.html?plan=lifetime"
             )
             pricingCard(
                 title: "Monthly",
-                price: "$1.99/mo",
+                price: "$2.99/mo",
                 caption: "Cancel anytime.\nSame features.",
                 highlighted: false,
                 url: "https://ivanegerev.github.io/snapbar/buy.html?plan=monthly"
