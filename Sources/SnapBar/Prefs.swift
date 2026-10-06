@@ -103,3 +103,28 @@ enum Recents {
         UserDefaults.standard.set([String](), forKey: key)
     }
 }
+
+/// Marks files SnapBar captured itself with an extended attribute, so
+/// housekeeping can tell them apart from look-alikes. macOS names its own
+/// screenshots exactly like ours ("Screenshot 2026-10-05 at 23.10.11.png")
+/// and saves them to the same Desktop, so a file name proves nothing.
+enum CaptureTag {
+    private static let attrName = "com.ivanegerev.snapbar.capture"
+
+    static func mark(_ url: URL) {
+        let value: [UInt8] = [0x31]
+        url.withUnsafeFileSystemRepresentation { (path: UnsafePointer<CChar>?) -> Void in
+            guard let path else { return }
+            _ = value.withUnsafeBytes { buf -> Int32 in
+                setxattr(path, attrName, buf.baseAddress, buf.count, 0, 0)
+            }
+        }
+    }
+
+    static func isMarked(_ url: URL) -> Bool {
+        url.withUnsafeFileSystemRepresentation { (path: UnsafePointer<CChar>?) -> Bool in
+            guard let path else { return false }
+            return getxattr(path, attrName, nil, 0, 0, 0) >= 0
+        }
+    }
+}

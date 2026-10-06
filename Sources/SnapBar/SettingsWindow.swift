@@ -50,7 +50,7 @@ struct SettingsView: View {
                     Text("After 90 days").tag(90)
                 }
                 if autoCleanupDays > 0 {
-                    Text("Captures older than \(autoCleanupDays) days are moved to the Trash at launch — only files matching the names above.")
+                    Text("Captures SnapBar took more than \(autoCleanupDays) days ago move to the Trash at launch. Nothing else in the folder is touched.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

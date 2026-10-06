@@ -97,6 +97,7 @@ final class AppServices: ObservableObject {
             Toast.show("Couldn't save the pasted image", symbol: "exclamationmark.triangle", tint: .orange)
             return
         }
+        CaptureTag.mark(url)
         Recents.add(url)
         recents = Recents.list()
         NotificationCenter.default.post(name: Self.capturesChanged, object: nil)
@@ -220,13 +221,13 @@ final class AppServices: ObservableObject {
 
     // MARK: - Housekeeping
 
-    /// Trash captures older than the configured age (only files matching the
-    /// app's own naming prefixes — never other files in the folder).
+    /// Trash captures older than the configured age. Only files SnapBar tagged
+    /// when it created them qualify; matching on the name prefix alone also
+    /// swept up the user's own ⇧⌘4 screenshots, which macOS names identically.
     func runAutoCleanup() {
         let days = Prefs.autoCleanupDays
         guard days > 0 else { return }
         let cutoff = Date().addingTimeInterval(-Double(days) * 86_400)
-        let prefixes = [Prefs.screenshotPrefix, Prefs.recordingPrefix]
         let dir = Prefs.saveDirURL
 
         DispatchQueue.global(qos: .utility).async {
@@ -234,7 +235,7 @@ final class AppServices: ObservableObject {
                 at: dir, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]
             )) ?? []
             let old = urls.filter { url in
-                guard prefixes.contains(where: { url.lastPathComponent.hasPrefix($0 + " ") }) else { return false }
+                guard CaptureTag.isMarked(url) else { return false }
                 let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
                     .contentModificationDate ?? Date()
                 return date < cutoff

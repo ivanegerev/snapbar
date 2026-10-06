@@ -58,6 +58,7 @@ final class CaptureManager {
         proc.terminationHandler = { [weak self] _ in
             DispatchQueue.main.async {
                 let saved = urls.filter { FileManager.default.fileExists(atPath: $0.path) }
+                saved.forEach(CaptureTag.mark)
                 guard let first = saved.first else {
                     // Interactive captures can be cancelled with Escape — that's
                     // normal. A missing file on a non-interactive capture isn't.
@@ -118,6 +119,7 @@ final class CaptureManager {
                     }
                     return
                 }
+                CaptureTag.mark(url)
                 Recents.add(url)
                 self.onCapture?(url)
             }
