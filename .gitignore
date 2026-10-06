@@ -4,3 +4,4 @@ dist/
 .claude/
 *.xcodeproj
 store/.secrets*
+LAUNCH.md
