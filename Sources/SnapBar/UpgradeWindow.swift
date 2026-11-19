@@ -8,6 +8,7 @@ struct UpgradeView: View {
     @ObservedObject private var license = LicenseManager.shared
     @State private var keyInput = ""
     @State private var activationFailed = false
+    @State private var confirmDeactivate = false
 
 
     var body: some View {
@@ -26,6 +27,8 @@ struct UpgradeView: View {
             .padding(22)
         }
         .frame(width: 480)
+        .background(Brand.paper)
+        .environment(\.colorScheme, .light)
     }
 
     private var header: some View {
@@ -61,12 +64,12 @@ struct UpgradeView: View {
                 feature("pin", "Pin screenshots on top")
             }
             GridRow {
-                feature("sparkles", "Beautify backgrounds & padding")
+                feature("photo.artframe","Beautify backgrounds & padding")
                 feature("checkerboard.rectangle", "Pixelate sensitive info")
             }
             GridRow {
-                feature("arrow.triangle.2.circlepath", "Free updates")
-                feature("heart", "Support an indie app")
+                feature("photo.stack", "Export clips as GIF")
+                feature("qrcode.viewfinder", "Scan QR codes")
             }
         }
     }
@@ -124,7 +127,7 @@ struct UpgradeView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(highlighted ? Brand.vermillion : .secondary)
+            .tint(highlighted ? Brand.vermillion : Brand.ink)
         }
         .padding(14)
         .frame(maxWidth: .infinity)
@@ -144,9 +147,10 @@ struct UpgradeView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
             HStack {
-                TextField("SNAP-XXXXX-XXXXX-XXXXX", text: $keyInput)
+                TextField("SNAP2-…", text: $keyInput, axis: .vertical)
+                    .lineLimit(2...4)
                     .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: 11, design: .monospaced))
                 Button("Activate") {
                     activationFailed = !LicenseManager.shared.activate(keyInput)
                     if !activationFailed { Toast.show("SnapBar Pro activated — welcome aboard", symbol: "checkmark.seal.fill") }
@@ -154,9 +158,9 @@ struct UpgradeView: View {
                 .disabled(keyInput.isEmpty)
             }
             if activationFailed {
-                Text("That key doesn't look right — check for typos.")
+                Text("That key doesn't look right — paste the whole key, starting with SNAP2-.")
                     .font(.system(size: 11))
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Brand.vermillion)
             }
         }
     }
@@ -166,11 +170,26 @@ struct UpgradeView: View {
             HStack(spacing: 6) {
                 Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
                 Text(license.licenseKey ?? "")
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: 11, design: .monospaced))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Button("Deactivate on this Mac") { license.deactivate() }
-                .buttonStyle(.link)
-                .font(.system(size: 11))
+            // Legacy SNAP- keys can't be re-activated (activate() takes SNAP2- only), so deactivating would lose Pro.
+            if !LicenseManager.isLegacyKey(license.licenseKey ?? "") {
+                Button("Deactivate on this Mac") { confirmDeactivate = true }
+                    .buttonStyle(.link)
+                    .font(.system(size: 11))
+            }
+        }
+        .confirmationDialog("Deactivate SnapBar Pro on this Mac?", isPresented: $confirmDeactivate) {
+            Button("Copy Key") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(license.licenseKey ?? "", forType: .string)
+                Toast.show("License key copied", symbol: "doc.on.doc")
+            }
+            Button("Deactivate", role: .destructive) { license.deactivate() }
+        } message: {
+            Text("You'll need your key to activate again. Copy it first:\n\(license.licenseKey ?? "")")
         }
         .frame(maxWidth: .infinity)
         .padding(14)

@@ -9,11 +9,18 @@ final class ThumbnailPanel: NSPanel {
     private static var current: ThumbnailPanel?
 
     static func show(for url: URL, services: AppServices) {
-        current?.close()
+        closeCurrent()
         let panel = ThumbnailPanel(url: url, services: services)
         current = panel
         panel.orderFrontRegardless()
         panel.scheduleDismiss(after: 7)
+    }
+
+    /// Closes at once, no fade, so a capture starting now can't catch it.
+    static func closeCurrent() {
+        current?.dismissTimer?.invalidate()
+        current?.close()
+        current = nil
     }
 
     private var dismissTimer: Timer?
@@ -145,10 +152,11 @@ private struct ThumbnailView: View {
                     }
                     ActionButton(symbol: "doc.on.doc", help: "Copy", action: onCopy)
                 }
+                .foregroundStyle(Brand.ink)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
-                .background(Capsule().fill(.regularMaterial))
-                .overlay(Capsule().strokeBorder(.separator, lineWidth: 0.5))
+                .background(Capsule().fill(Brand.paper))
+                .overlay(Capsule().strokeBorder(Brand.ink, lineWidth: 1))
                 .padding(.bottom, 8)
                 .transition(.opacity)
             }

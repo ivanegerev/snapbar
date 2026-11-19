@@ -44,6 +44,8 @@ enum OCRManager {
         }
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
+        // Default is English-only; CJK otherwise comes back empty.
+        request.automaticallyDetectsLanguage = true
 
         DispatchQueue.global(qos: .userInitiated).async {
             try? VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([request])

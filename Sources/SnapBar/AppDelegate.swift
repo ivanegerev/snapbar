@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import UniformTypeIdentifiers
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let services = AppServices.shared
@@ -9,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Prefs.register()
         _ = LicenseManager.shared // stamps first-launch date for the trial
+        installMainMenu()
         statusController = StatusItemController(services: services)
         registerHotkeys()
 
@@ -28,13 +30,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.services.runAutoCleanup()
             self?.services.checkForUpdatesIfDue()
         }
+        // A login-item app runs for weeks; the 0.9-day gate inside keeps this to one request a day.
+        let updateTimer = Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
+            self?.services.checkForUpdatesIfDue()
+        }
+        updateTimer.tolerance = 600
     }
+
+    /// Never visible for an accessory app, but AppKit only routes ⌘C/⌘V/⌘Z/⌘W/⌘Q
+    /// to text fields and windows through the main menu's key equivalents.
+    private func installMainMenu() {
+        let mainMenu = NSMenu()
+        func submenu(_ title: String, _ items: [NSMenuItem]) {
+            let menu = NSMenu(title: title)
+            for item in items { menu.addItem(item) }
+            let host = NSMenuItem()
+            host.submenu = menu
+            mainMenu.addItem(host)
+        }
+        func item(_ title: String, _ action: Selector, _ key: String, target: AnyObject? = nil) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.target = target
+            return item
+        }
+        submenu("SnapBar", [
+            item("About SnapBar", #selector(showAbout), "", target: self),
+            item("Settings…", #selector(showSettings), ",", target: self),
+            .separator(),
+            item("Quit SnapBar", #selector(NSApplication.terminate(_:)), "q"),
+        ])
+        submenu("Edit", [
+            item("Undo", Selector(("undo:")), "z"),
+            item("Redo", Selector(("redo:")), "Z"),
+            .separator(),
+            item("Cut", #selector(NSText.cut(_:)), "x"),
+            item("Copy", #selector(NSText.copy(_:)), "c"),
+            item("Paste", #selector(NSText.paste(_:)), "v"),
+            item("Select All", #selector(NSText.selectAll(_:)), "a"),
+        ])
+        submenu("Window", [
+            item("Close", #selector(NSWindow.performClose(_:)), "w"),
+            item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
+        ])
+        NSApp.mainMenu = mainMenu
+    }
+
+    @objc private func showAbout() { AboutWindowController.shared.show() }
+    @objc private func showSettings() { SettingsWindowController.shared.show() }
 
     /// "Open With → SnapBar" from Finder: images land in the markup editor,
     /// movies in the clip trimmer.
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
-            if ["mov", "mp4"].contains(url.pathExtension.lowercased()) {
+            if UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) == true {
                 ClipEditorWindowController.open(url)
             } else {
                 EditorWindowController.open(url)
@@ -47,20 +95,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func registerHotkeys() {
         let ctrlShift = controlKey | shiftKey
         hotkeys.register(keyCode: kVK_ANSI_3, modifiers: ctrlShift) { [weak self] in
-            self?.services.capture.captureStill(.screen)
+            self?.services.captureScreen()
         }
         hotkeys.register(keyCode: kVK_ANSI_4, modifiers: ctrlShift) { [weak self] in
-            self?.services.capture.captureStill(.area)
+            self?.services.captureArea()
         }
         hotkeys.register(keyCode: kVK_ANSI_6, modifiers: ctrlShift) { [weak self] in
-            self?.services.capture.captureStill(.window)
+            self?.services.captureWindow()
         }
         hotkeys.register(keyCode: kVK_ANSI_5, modifiers: ctrlShift) { [weak self] in
             guard let self else { return }
             if self.services.capture.isRecording {
-                self.services.capture.stopRecording()
+                self.services.stopRecording()
             } else {
-                self.services.capture.startRecording(.area)
+                self.services.recordArea()
             }
         }
         hotkeys.register(keyCode: kVK_ANSI_2, modifiers: ctrlShift) { [weak self] in
@@ -80,9 +128,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Unsaved markup cancels the quit and shows its Save sheet; quit again once it's handled.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        EditorWindowController.closeDirtyForQuit() ? .terminateCancel : .terminateNow
+    }
+
+    /// Every quit path (menu, ⌘Q, popover, logout) lands here. The main queue never
+    /// runs again after this returns, so the recording is finalized synchronously.
     func applicationWillTerminate(_ notification: Notification) {
-        if services.capture.isRecording {
-            services.capture.stopRecording()
-        }
+        services.capture.stopRecordingAndWait()
     }
 }

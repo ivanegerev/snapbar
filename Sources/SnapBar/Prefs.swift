@@ -72,6 +72,16 @@ enum Prefs {
         }
         return url
     }
+
+    /// Scratch file for an export that will replace `dest` via `replaceItemAt` (which keeps
+    /// the destination's xattrs and Finder tags). Lives in the volume's TemporaryItems, so a
+    /// crash mid-export never leaves a hidden partial file in the user's folder.
+    static func replacementTempURL(for dest: URL) -> URL {
+        let dir = (try? FileManager.default.url(
+            for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: dest, create: true
+        )) ?? dest.deletingLastPathComponent()
+        return dir.appendingPathComponent(".\(UUID().uuidString).\(dest.pathExtension)")
+    }
 }
 
 /// Rolling list of recent capture file paths, persisted in UserDefaults.
@@ -118,6 +128,13 @@ enum CaptureTag {
             _ = value.withUnsafeBytes { buf -> Int32 in
                 setxattr(path, attrName, buf.baseAddress, buf.count, 0, 0)
             }
+        }
+    }
+
+    static func unmark(_ url: URL) {
+        url.withUnsafeFileSystemRepresentation { (path: UnsafePointer<CChar>?) -> Void in
+            guard let path else { return }
+            _ = removexattr(path, attrName, 0)
         }
     }
 

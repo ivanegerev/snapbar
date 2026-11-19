@@ -5,3 +5,4 @@ compatibility_date = "2026-01-01"
 # Secrets (set with `wrangler secret put <NAME>`):
 #   STRIPE_SECRET_KEY
 #   LICENSE_SECRET
+#   LICENSE_SIGNING_KEY

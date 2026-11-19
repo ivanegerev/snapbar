@@ -6,12 +6,17 @@
  *   derived deterministically from the session id — so re-visiting the thank-you
  *   page always shows the same key, with no database needed.
  *
- * Key format matches LicenseManager.swift: SNAP-XXXXX-XXXXX-XXXXX where the
- * 15-char base-36 body has a digit sum divisible by 36.
+ * Key format matches LicenseManager.swift: SNAP2-<base64url(id)>.<base64url(sig)>,
+ * where id is the first 12 bytes of HMAC(LICENSE_SECRET, session id) and sig is
+ * an Ed25519 signature over "snapbar-license-v2:" + id. The app only holds the
+ * public key, so keys can't be forged from the source.
  *
  * Required secrets (wrangler secret put ...):
- *   STRIPE_SECRET_KEY  — sk_live_... (restricted key with Checkout Session read is enough)
- *   LICENSE_SECRET     — any long random string; changing it changes all keys
+ *   STRIPE_SECRET_KEY    — sk_live_... (restricted key with Checkout Session read is enough)
+ *   LICENSE_SECRET       — any long random string; changing it changes the key a
+ *                          revisited thanks link shows (old keys stay valid)
+ *   LICENSE_SIGNING_KEY  — base64 raw 32-byte Ed25519 private key, from
+ *                          store/.secrets-signing-key
  */
 
 const CORS = {
@@ -45,7 +50,7 @@ export default {
         return json({ error: "not paid" }, 402);
       }
 
-      const key = await makeKey(sessionId, env.LICENSE_SECRET);
+      const key = await makeKey(sessionId, env.LICENSE_SECRET, env.LICENSE_SIGNING_KEY);
       return json({ key, email: session.customer_details?.email ?? null });
     }
 
@@ -57,24 +62,34 @@ function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: CORS });
 }
 
-const ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+// PKCS#8 DER header for an Ed25519 private key; WebCrypto can't import a raw one.
+const PKCS8_ED25519 = [0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20];
+const enc = new TextEncoder();
 
-async function makeKey(seed, secret) {
-  const keyMaterial = await crypto.subtle.importKey(
+async function makeKey(seed, secret, signingKey) {
+  const hmacKey = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(secret),
+    enc.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
   );
-  const sig = new Uint8Array(
-    await crypto.subtle.sign("HMAC", keyMaterial, new TextEncoder().encode(seed))
+  const id = new Uint8Array(await crypto.subtle.sign("HMAC", hmacKey, enc.encode(seed))).slice(0, 12);
+
+  const raw = Uint8Array.from(atob(signingKey.trim()), (c) => c.charCodeAt(0));
+  const edKey = await crypto.subtle.importKey(
+    "pkcs8",
+    new Uint8Array([...PKCS8_ED25519, ...raw]),
+    { name: "Ed25519" },
+    false,
+    ["sign"]
   );
+  const sig = new Uint8Array(
+    await crypto.subtle.sign("Ed25519", edKey, new Uint8Array([...enc.encode("snapbar-license-v2:"), ...id]))
+  );
+  return `SNAP2-${base64url(id)}.${base64url(sig)}`;
+}
 
-  const values = Array.from(sig.slice(0, 14), (b) => b % 36);
-  const sum = values.reduce((a, b) => a + b, 0);
-  values.push((36 - (sum % 36)) % 36);
-
-  const body = values.map((v) => ALPHABET[v]).join("");
-  return `SNAP-${body.slice(0, 5)}-${body.slice(5, 10)}-${body.slice(10, 15)}`;
+function base64url(bytes) {
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }

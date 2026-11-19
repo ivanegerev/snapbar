@@ -20,15 +20,26 @@ fi
 echo "==> Deploying worker"
 $WRANGLER deploy
 
-# LICENSE_SECRET signs every license key. It lives in store/.secrets.md, which
-# git ignores. Changing it changes the key issued for future checkouts; keys
-# already sold keep working, since the app validates them offline by checksum.
+# LICENSE_SECRET picks each key's id from the session id. It lives in
+# store/.secrets.md, which git ignores. Changing it changes the key a revisited
+# thanks link shows; keys already issued keep working, since the app only checks
+# the Ed25519 signature.
 if [ -f .secrets.md ]; then
   SECRET=$(grep -m1 '^LICENSE_SECRET=' .secrets.md | cut -d= -f2-)
   if [ -n "${SECRET:-}" ]; then
     echo "==> Setting LICENSE_SECRET (from store/.secrets.md)"
     printf '%s' "$SECRET" | $WRANGLER secret put LICENSE_SECRET
   fi
+fi
+
+# LICENSE_SIGNING_KEY is the Ed25519 private key that signs every license key
+# (also in the login keychain as "snapbar-license-signing-key"). Without it the
+# worker can't issue keys.
+if [ -f .secrets-signing-key ]; then
+  echo "==> Setting LICENSE_SIGNING_KEY (from store/.secrets-signing-key)"
+  tr -d '\n' < .secrets-signing-key | $WRANGLER secret put LICENSE_SIGNING_KEY
+else
+  echo "!! store/.secrets-signing-key missing — the worker can't sign keys." >&2
 fi
 
 # STRIPE_SECRET_KEY must be a LIVE restricted key with read access to Checkout

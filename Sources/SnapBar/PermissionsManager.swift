@@ -28,7 +28,8 @@ enum ScreenPermission {
         let path = Bundle.main.bundlePath
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/bin/sh")
-        proc.arguments = ["-c", "sleep 0.6; /usr/bin/open \"\(path)\""]
+        // Path goes in as $0, never into the script, so $ ` " in it stay literal.
+        proc.arguments = ["-c", "sleep 0.6; /usr/bin/open \"$0\"", path]
         try? proc.run()
         NSApp.terminate(nil)
     }
@@ -39,6 +40,7 @@ enum ScreenPermission {
 final class PermissionWindowController {
     static let shared = PermissionWindowController()
     private var window: NSWindow?
+    private var closeObserver: NSObjectProtocol?
 
     func show() {
         if window == nil {
@@ -49,6 +51,18 @@ final class PermissionWindowController {
             win.isReleasedWhenClosed = false
             win.center()
             window = win
+            closeObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification, object: win, queue: .main
+            ) { [weak self] _ in
+                // Drop the window once AppKit is done closing it, so PermissionView's
+                // 1 Hz timer goes with it instead of polling for the app's lifetime.
+                DispatchQueue.main.async {
+                    guard let self, self.window?.isVisible == false else { return }
+                    if let o = self.closeObserver { NotificationCenter.default.removeObserver(o) }
+                    self.closeObserver = nil
+                    self.window = nil
+                }
+            }
         }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
@@ -154,7 +168,7 @@ private struct PermissionView: View {
     private var statusRow: some View {
         HStack(spacing: 9) {
             Image(systemName: granted ? "checkmark.circle.fill" : "circle.dashed")
-                .foregroundStyle(granted ? .green : Brand.vermillion)
+                .foregroundStyle(granted ? Brand.ink : Brand.vermillion)
             Text("Screen Recording")
                 .font(.system(size: 12.5, weight: .medium))
                 .foregroundStyle(Brand.ink)
@@ -162,7 +176,7 @@ private struct PermissionView: View {
             Text(granted ? "GRANTED" : "NOT GRANTED")
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
                 .tracking(0.8)
-                .foregroundStyle(granted ? .green : Brand.vermillion)
+                .foregroundStyle(granted ? Brand.ink : Brand.vermillion)
         }
         .padding(.horizontal, 13).padding(.vertical, 10)
         .background(RoundedRectangle(cornerRadius: 8).fill(Brand.cream))

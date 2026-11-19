@@ -28,6 +28,9 @@ final class StatusItemController: NSObject {
         services.closePopover = { [weak self] in
             self?.popover.performClose(nil)
         }
+        services.popoverIsShown = { [weak self] in
+            self?.popover.isShown ?? false
+        }
 
         if let button = statusItem.button {
             button.target = self
@@ -108,7 +111,6 @@ final class StatusItemController: NSObject {
         NSWorkspace.shared.open(URL(string: "https://ivanegerev.github.io/snapbar/")!)
     }
     @objc private func quit() {
-        if services.capture.isRecording { services.capture.stopRecording() }
         NSApp.terminate(nil)
     }
 
@@ -121,7 +123,7 @@ final class StatusItemController: NSObject {
                 systemSymbolName: "record.circle.fill",
                 accessibilityDescription: "SnapBar — recording"
             )
-            button.contentTintColor = .systemRed
+            button.contentTintColor = Brand.nsVermillion
             button.imagePosition = .imageLeft
         } else {
             button.image = Self.barIcon
@@ -160,6 +162,7 @@ final class StatusItemController: NSObject {
             return true
         }
         image.isTemplate = true
+        image.accessibilityDescription = "SnapBar"
         return image
     }()
 

@@ -232,7 +232,7 @@ struct MenuPopoverView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                Text("V1.6")
+                Text("V" + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""))
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .foregroundStyle(Brand.graphite.opacity(0.7))
             }
@@ -374,6 +374,11 @@ private struct RecentThumb: View {
         )
         .onHover { hovering = $0 }
         .onTapGesture { services.open(url) }
+        // A Button would swallow the drag-out, so expose the tap to VoiceOver and keyboard access directly.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(url.lastPathComponent)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { services.open(url) }
         .onDrag { NSItemProvider(contentsOf: url) ?? NSItemProvider() }
         .contextMenu {
             Button("Open") { services.open(url) }
@@ -385,6 +390,8 @@ private struct RecentThumb: View {
             }
             Button("Copy") { services.copyImage(url) }
             Button("Reveal in Finder") { services.reveal(url) }
+            Divider()
+            Button("Move to Trash", role: .destructive) { services.trash(url) }
         }
         .help(url.lastPathComponent)
     }

@@ -10,6 +10,9 @@ final class CaptureManager {
     private(set) var isRecording = false
     private(set) var recordingStartDate: Date?
     private var recordingProcess: Process?
+    private var recordingURL: URL?
+    private var stopSent = false
+    private var stillInFlight = false
 
     /// Called on the main thread whenever recording starts or stops.
     var onRecordingStateChange: (() -> Void)?
@@ -25,20 +28,52 @@ final class CaptureManager {
         return false
     }
 
+    private static var saveFolderName: String {
+        (Prefs.saveDirURL.path as NSString).abbreviatingWithTildeInPath
+    }
+
+    /// A denied Desktop/Documents prompt or an unplugged drive only shows up
+    /// on an actual write, and screencapture then fails silently — probe first.
+    private static func ensureSaveDirWritable() -> Bool {
+        let probe = Prefs.saveDirURL.appendingPathComponent(".snapbar-write-probe-\(UUID().uuidString)")
+        if (try? Data().write(to: probe)) != nil {
+            try? FileManager.default.removeItem(at: probe)
+            return true
+        }
+        Toast.show("Can't save to \(saveFolderName) — choose another folder in Settings", symbol: "exclamationmark.triangle", tint: Brand.vermillion)
+        return false
+    }
+
+    /// Our own thumbnail and toasts must not end up in the shot.
+    private static func clearOverlays() {
+        ThumbnailPanel.closeCurrent()
+        Toast.hide()
+    }
+
+    /// Tags, records and announces a file screencapture just wrote.
+    private static func didSave(_ url: URL) {
+        CaptureTag.mark(url)
+        Recents.add(url)
+        NotificationCenter.default.post(name: AppServices.capturesChanged, object: url)
+    }
+
     // MARK: - Stills
 
     func captureStill(_ kind: StillKind, delaySeconds: Int? = nil) {
-        guard Self.ensureScreenPermission() else { return }
+        // A second press while screencapture is still running would share its file name.
+        guard !stillInFlight, Self.ensureScreenPermission(), Self.ensureSaveDirWritable() else { return }
+        Self.clearOverlays()
         var args: [String] = []
         switch kind {
         case .area:
             args.append("-i")
         case .window:
             args += ["-i", "-W"]
-            if !Prefs.windowShadow { args.append("-o") }
         case .screen:
             if Prefs.showCursor { args.append("-C") }
         }
+        // Space toggles an area capture into window mode, so -o applies there too.
+        if kind != .screen && !Prefs.windowShadow { args.append("-o") }
         if !Prefs.playSound { args.append("-x") }
         let delay = delaySeconds ?? Prefs.delaySeconds
         if delay > 0 { args.append("-T\(delay)") }
@@ -57,24 +92,30 @@ final class CaptureManager {
         let proc = makeProcess(args: args)
         proc.terminationHandler = { [weak self] _ in
             DispatchQueue.main.async {
+                self?.stillInFlight = false
                 let saved = urls.filter { FileManager.default.fileExists(atPath: $0.path) }
-                saved.forEach(CaptureTag.mark)
                 guard let first = saved.first else {
                     // Interactive captures can be cancelled with Escape — that's
                     // normal. A missing file on a non-interactive capture isn't.
                     if kind == .screen {
-                        Toast.show("Capture didn't complete — check Screen Recording permission", symbol: "exclamationmark.triangle", tint: .orange)
-                        PermissionWindowController.shared.show()
+                        if ScreenPermission.granted {
+                            Toast.show("Capture didn't save to \(Self.saveFolderName)", symbol: "exclamationmark.triangle", tint: Brand.vermillion)
+                        } else {
+                            Toast.show("Capture didn't complete — check Screen Recording permission", symbol: "exclamationmark.triangle", tint: .orange)
+                            PermissionWindowController.shared.show()
+                        }
                     }
                     return
                 }
                 // Secondary displays go straight to recents; the primary shot
                 // drives the thumbnail/editor flow.
-                for extra in saved.dropFirst() { Recents.add(extra) }
+                for extra in saved.dropFirst() { Self.didSave(extra) }
+                Self.didSave(first)
                 self?.finishStill(url: first)
             }
         }
-        try? proc.run()
+        stillInFlight = true
+        do { try proc.run() } catch { stillInFlight = false }
     }
 
     private func finishStill(url: URL) {
@@ -83,7 +124,6 @@ final class CaptureManager {
             pb.clearContents()
             pb.writeObjects([image])
         }
-        Recents.add(url)
         onCapture?(url)
     }
 
@@ -91,7 +131,8 @@ final class CaptureManager {
 
     func startRecording(_ kind: RecordingKind) {
         guard !isRecording else { return }
-        guard Self.ensureScreenPermission() else { return }
+        guard Self.ensureScreenPermission(), Self.ensureSaveDirWritable() else { return }
+        Self.clearOverlays()
 
         var args = ["-v"]
         if kind == .area { args.append("-Jvideo") }
@@ -103,13 +144,11 @@ final class CaptureManager {
         args.append(url.path)
 
         let proc = makeProcess(args: args)
-        proc.terminationHandler = { [weak self] _ in
+        proc.terminationHandler = { [weak self] finished in
             DispatchQueue.main.async {
-                guard let self else { return }
-                self.isRecording = false
-                self.recordingStartDate = nil
-                self.recordingProcess = nil
-                self.onRecordingStateChange?()
+                // stopRecordingAndWait may already have finished this recording.
+                guard let self, self.recordingProcess === finished else { return }
+                self.resetRecordingState()
                 guard FileManager.default.fileExists(atPath: url.path) else {
                     // Cancelling the interactive recording toolbar (Esc) is
                     // normal; only complain when permission is the culprit.
@@ -119,8 +158,7 @@ final class CaptureManager {
                     }
                     return
                 }
-                CaptureTag.mark(url)
-                Recents.add(url)
+                Self.didSave(url)
                 self.onCapture?(url)
             }
         }
@@ -130,14 +168,39 @@ final class CaptureManager {
             return
         }
         recordingProcess = proc
+        recordingURL = url
         recordingStartDate = Date()
         isRecording = true
         onRecordingStateChange?()
     }
 
-    /// SIGINT makes screencapture stop and finalize the movie file.
+    /// SIGINT makes screencapture stop and finalize the movie file. Sent once:
+    /// a second SIGINT can cut the finalize short.
     func stopRecording() {
-        recordingProcess?.interrupt()
+        guard let proc = recordingProcess, proc.isRunning, !stopSent else { return }
+        stopSent = true
+        proc.interrupt()
+    }
+
+    /// Quit path: the main-queue terminationHandler never runs once the app is
+    /// exiting, so wait for screencapture here and file the movie inline
+    /// (no editor or thumbnail).
+    func stopRecordingAndWait(timeout: TimeInterval = 5) {
+        guard let proc = recordingProcess, let url = recordingURL else { return }
+        stopRecording()
+        let deadline = Date().addingTimeInterval(timeout)
+        while proc.isRunning && Date() < deadline { usleep(20_000) }
+        resetRecordingState()
+        if FileManager.default.fileExists(atPath: url.path) { Self.didSave(url) }
+    }
+
+    private func resetRecordingState() {
+        isRecording = false
+        recordingStartDate = nil
+        recordingProcess = nil
+        recordingURL = nil
+        stopSent = false
+        onRecordingStateChange?()
     }
 
     private func makeProcess(args: [String]) -> Process {

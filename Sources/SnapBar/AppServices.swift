@@ -13,11 +13,15 @@ final class AppServices: ObservableObject {
     let capture = CaptureManager()
 
     @Published private(set) var isRecording = false
-    @Published private(set) var recents: [URL] = []
+    @Published private(set) var recents: [URL] = [] {
+        // Keeps the cache to what the strip can show; it otherwise grew for the life of the process.
+        didSet { thumbCache = thumbCache.filter { recents.contains($0.key) } }
+    }
     @Published private(set) var desktopIconsHidden = false
 
     /// Set by StatusItemController so actions can dismiss the popover first.
     var closePopover: (() -> Void)?
+    var popoverIsShown: () -> Bool = { false }
 
     private var thumbCache: [URL: NSImage] = [:]
 
@@ -29,10 +33,19 @@ final class AppServices: ObservableObject {
             guard let self else { return }
             self.isRecording = self.capture.isRecording
         }
+        // Editors, exports and housekeeping announce file changes here; the URL
+        // (when given) may have been overwritten in place, so its thumbnail is stale.
+        NotificationCenter.default.addObserver(forName: Self.capturesChanged, object: nil, queue: .main) { [weak self] note in
+            guard let self else { return }
+            if let url = note.object as? URL {
+                self.thumbCache = self.thumbCache.filter { $0.key.path != url.path }
+            } else {
+                self.thumbCache.removeAll()
+            }
+            self.recents = Recents.list()
+        }
         capture.onCapture = { [weak self] url in
             guard let self else { return }
-            self.recents = Recents.list()
-            NotificationCenter.default.post(name: Self.capturesChanged, object: nil)
             if Prefs.openEditorAfterCapture {
                 // Straight into editing — the editor covers copy/save, so the
                 // floating thumbnail would just be noise on top of it.
@@ -50,7 +63,11 @@ final class AppServices: ObservableObject {
     // MARK: - Capture actions (popover closes first so it isn't in the shot)
 
     private func afterPopoverCloses(_ block: @escaping () -> Void) {
+        guard popoverIsShown() else { return block() }
         closePopover?()
+        // Opening the popover activated SnapBar; hand focus back so the target
+        // window is shot active and keystrokes return to it afterwards.
+        if NSApp.isActive && NSApp.mainWindow == nil { NSApp.deactivate() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: block)
     }
 
@@ -99,8 +116,7 @@ final class AppServices: ObservableObject {
         }
         CaptureTag.mark(url)
         Recents.add(url)
-        recents = Recents.list()
-        NotificationCenter.default.post(name: Self.capturesChanged, object: nil)
+        NotificationCenter.default.post(name: Self.capturesChanged, object: url)
         EditorWindowController.open(url)
     }
 
@@ -204,17 +220,15 @@ final class AppServices: ObservableObject {
     }
 
     func trash(_ url: URL) {
-        NSWorkspace.shared.recycle([url]) { [weak self] _, error in
+        NSWorkspace.shared.recycle([url]) { _, error in
             DispatchQueue.main.async {
                 guard error == nil else {
                     Toast.show("Couldn't move to Trash", symbol: "exclamationmark.triangle", tint: .orange)
                     return
                 }
                 Recents.remove(url)
-                self?.recents = Recents.list()
-                self?.thumbCache[url] = nil
                 Toast.show("Moved to Trash", symbol: "trash")
-                NotificationCenter.default.post(name: Self.capturesChanged, object: nil)
+                NotificationCenter.default.post(name: Self.capturesChanged, object: url)
             }
         }
     }
@@ -241,11 +255,23 @@ final class AppServices: ObservableObject {
                 return date < cutoff
             }
             guard !old.isEmpty else { return }
+            // Untag before trashing: Finder's Put Back keeps the xattr and the old
+            // mtime, so a restored capture would otherwise be trashed again next run.
+            old.forEach(CaptureTag.unmark)
             DispatchQueue.main.async {
-                NSWorkspace.shared.recycle(old) { _, error in
-                    guard error == nil else { return }
-                    Toast.show("Tidied \(old.count) old capture\(old.count == 1 ? "" : "s") into the Trash", symbol: "trash")
-                    NotificationCenter.default.post(name: Self.capturesChanged, object: nil)
+                NSWorkspace.shared.recycle(old) { moved, _ in
+                    DispatchQueue.main.async {
+                        let failed = old.filter { moved[$0] == nil }
+                        failed.forEach(CaptureTag.mark)
+                        if moved.isEmpty {
+                            Toast.show("Couldn't tidy old captures into the Trash", symbol: "exclamationmark.triangle", tint: .orange)
+                            return
+                        }
+                        var message = "Tidied \(moved.count) old capture\(moved.count == 1 ? "" : "s") into the Trash"
+                        if !failed.isEmpty { message += " · \(failed.count) couldn't be moved" }
+                        Toast.show(message, symbol: "trash", tint: failed.isEmpty ? .green : .orange)
+                        NotificationCenter.default.post(name: Self.capturesChanged, object: nil)
+                    }
                 }
             }
         }
@@ -256,13 +282,14 @@ final class AppServices: ObservableObject {
         guard Prefs.autoCheckUpdates else { return }
         let last = UserDefaults.standard.object(forKey: "lastUpdateCheck") as? Date ?? .distantPast
         guard Date().timeIntervalSince(last) > 86_400 * 0.9 else { return }
-        UserDefaults.standard.set(Date(), forKey: "lastUpdateCheck")
 
         let url = URL(string: "https://api.github.com/repos/ivanegerev/snapbar/releases/latest")!
         URLSession.shared.dataTask(with: url) { data, _, _ in
             guard let data,
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let tag = obj["tag_name"] as? String else { return }
+            // Only a real answer uses up the day; a launch with no network retries on the next tick.
+            UserDefaults.standard.set(Date(), forKey: "lastUpdateCheck")
             let remote = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
             let local = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
             guard Self.version(remote, isNewerThan: local) else { return }
@@ -286,7 +313,6 @@ final class AppServices: ObservableObject {
     func clearRecents() {
         Recents.clear()
         recents = []
-        thumbCache.removeAll()
     }
 
     // MARK: - Desktop icons (popular for clean recordings)

@@ -47,8 +47,9 @@ final class ClipEditorModel: ObservableObject {
         isTrimming = true
         pv.beginTrimming { [weak self] result in
             DispatchQueue.main.async {
-                self?.isTrimming = false
-                if result == .okButton { self?.hasTrim = true }
+                guard let self else { return }
+                self.isTrimming = false
+                if result == .okButton { self.hasTrim = self.exportRange != nil }
             }
         }
     }
@@ -90,23 +91,44 @@ final class ClipEditorModel: ObservableObject {
             Toast.show("Export failed", symbol: "exclamationmark.triangle", tint: .orange)
             return
         }
-        try? FileManager.default.removeItem(at: dest)
+        let tmp = Prefs.replacementTempURL(for: dest)
         export.outputFileType = .mov
-        export.outputURL = dest
+        export.outputURL = tmp
         if let range = exportRange { export.timeRange = range }
 
         isExporting = true
         export.exportAsynchronously { [weak self] in
             DispatchQueue.main.async {
                 self?.isExporting = false
-                if export.status == .completed {
+                if Self.moveIntoPlace(tmp, at: dest, succeeded: export.status == .completed) {
+                    if let self, dest.resolvingSymlinksInPath() == self.url.resolvingSymlinksInPath() {
+                        // The source was just replaced: reload so playback and the next trim use the new file.
+                        self.player.replaceCurrentItem(with: AVPlayerItem(url: self.url))
+                        self.hasTrim = false
+                        self.loadInfo()
+                    }
                     Recents.add(dest)
+                    NotificationCenter.default.post(name: AppServices.capturesChanged, object: dest)
                     Toast.show("Saved \(dest.lastPathComponent)")
                 } else {
                     Toast.show("Export failed", symbol: "exclamationmark.triangle", tint: .orange)
                 }
             }
         }
+    }
+
+    /// Exports are written to a hidden file beside `dest` and only swapped in
+    /// once they succeed, so a failed export never costs the existing file
+    /// (which may be the very clip being edited).
+    private static func moveIntoPlace(_ tmp: URL, at dest: URL, succeeded: Bool) -> Bool {
+        if succeeded {
+            do {
+                _ = try FileManager.default.replaceItemAt(dest, withItemAt: tmp)
+                return true
+            } catch {}
+        }
+        try? FileManager.default.removeItem(at: tmp)
+        return false
     }
 
     // MARK: - GIF export
@@ -124,14 +146,14 @@ final class ClipEditorModel: ObservableObject {
             let fps = 10.0
             var step = 1.0 / fps
             var frameCount = max(Int(duration * fps), 1)
-            if frameCount > 240 { // cap file size on long clips
-                frameCount = 240
-                step = duration / 240
+            if frameCount > 150 { // cap file size on long clips
+                frameCount = 150
+                step = duration / 150
             }
 
-            try? FileManager.default.removeItem(at: dest)
+            let tmp = Prefs.replacementTempURL(for: dest)
             guard let destination = CGImageDestinationCreateWithURL(
-                dest as CFURL, UTType.gif.identifier as CFString, frameCount, nil
+                tmp as CFURL, UTType.gif.identifier as CFString, frameCount, nil
             ) else {
                 DispatchQueue.main.async {
                     self?.isExporting = false
@@ -145,7 +167,9 @@ final class ClipEditorModel: ObservableObject {
 
             let generator = AVAssetImageGenerator(asset: asset)
             generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 960, height: 960)
+            // ImageIO's GIF encoder holds every frame until Finalize, so frames x size sets peak memory
+            // (240 x 960px measured ~1.5 GB, 150 x 640px ~0.45 GB).
+            generator.maximumSize = CGSize(width: 640, height: 640)
             generator.requestedTimeToleranceBefore = CMTime(seconds: 0.03, preferredTimescale: 600)
             generator.requestedTimeToleranceAfter = CMTime(seconds: 0.03, preferredTimescale: 600)
 
@@ -154,17 +178,20 @@ final class ClipEditorModel: ObservableObject {
             ] as CFDictionary
 
             for i in 0..<frameCount {
-                let t = CMTime(seconds: startSec + Double(i) * step, preferredTimescale: 600)
-                if let cg = try? generator.copyCGImage(at: t, actualTime: nil) {
-                    CGImageDestinationAddImage(destination, cg, frameProps)
+                autoreleasepool {
+                    let t = CMTime(seconds: startSec + Double(i) * step, preferredTimescale: 600)
+                    if let cg = try? generator.copyCGImage(at: t, actualTime: nil) {
+                        CGImageDestinationAddImage(destination, cg, frameProps)
+                    }
                 }
             }
-            let ok = CGImageDestinationFinalize(destination)
+            let ok = Self.moveIntoPlace(tmp, at: dest, succeeded: CGImageDestinationFinalize(destination))
 
             DispatchQueue.main.async {
                 self?.isExporting = false
                 if ok {
                     Recents.add(dest)
+                    NotificationCenter.default.post(name: AppServices.capturesChanged, object: dest)
                     Toast.show("Saved \(dest.lastPathComponent)")
                     NSWorkspace.shared.activateFileViewerSelecting([dest])
                 } else {
@@ -257,8 +284,8 @@ struct ClipEditorView: View {
             Button("Save") { model.saveTrimmed(to: model.defaultSaveURL()) }
                 .keyboardShortcut("s", modifiers: .command)
                 .buttonStyle(.borderedProminent)
-                .disabled(model.isExporting)
-                .help("Saves a trimmed copy next to the original")
+                .disabled(model.isExporting || !model.hasTrim)
+                .help(model.hasTrim ? "Saves a trimmed copy next to the original" : "Trim the clip first — nothing to save yet")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -305,7 +332,8 @@ enum ClipEditorWindowController {
 
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: window, queue: .main
-        ) { note in
+        ) { [weak model] note in
+            model?.player.pause()
             if let win = note.object as? NSWindow {
                 windows.removeAll { $0 === win }
             }

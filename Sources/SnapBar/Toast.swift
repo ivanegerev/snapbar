@@ -5,9 +5,8 @@ import SwiftUI
 enum Toast {
     private static var panel: NSPanel?
 
-    static func show(_ message: String, symbol: String = "checkmark.circle.fill", tint: Color = .green) {
-        panel?.close()
-        panel = nil
+    static func show(_ message: String, symbol: String = "checkmark.circle.fill", tint: Color = Brand.ink) {
+        hide()
 
         let view = NSHostingView(rootView: ToastView(message: message, symbol: symbol, tint: tint))
         view.frame.size = view.fittingSize
@@ -48,6 +47,12 @@ enum Toast {
             })
         }
     }
+
+    /// Removes the toast at once, no fade, so a capture starting now can't catch it.
+    static func hide() {
+        panel?.close()
+        panel = nil
+    }
 }
 
 private struct ToastView: View {
@@ -58,13 +63,15 @@ private struct ToastView: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: symbol)
-                .foregroundStyle(tint)
+                // One accent (BRAND.md): success stays ink, anything else is a warning.
+                .foregroundStyle(tint == Brand.ink || tint == .green ? Brand.ink : Brand.vermillion)
             Text(message)
                 .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Brand.ink)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(.separator, lineWidth: 0.5))
+        .background(Brand.paper, in: Capsule())
+        .overlay(Capsule().strokeBorder(Brand.ink, lineWidth: 1))
     }
 }

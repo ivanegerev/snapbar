@@ -6,14 +6,15 @@
 
 SnapBar is a macOS menu bar app for screenshots and screen recordings. It's about
 4,000 lines of Swift across 23 files, has no third-party dependencies, and the
-release build is under 3 MB.
+release build is under 5 MB.
 
 [Website](https://ivanegerev.github.io/snapbar/) ·
 [Download the latest release](https://github.com/ivanegerev/snapbar/releases/latest)
 
-Runs on macOS 13 Ventura or later, Apple Silicon and Intel. The build is ad-hoc
-signed and not notarized yet, so on first launch right-click SnapBar.app and
-choose Open.
+Runs on macOS 13 Ventura or later, Apple Silicon and Intel. The build isn't
+notarized yet, so macOS blocks the first launch. On macOS 15 or later, open it
+once and click Done, then click Open Anyway in System Settings → Privacy &
+Security. On macOS 13–14, right-click SnapBar.app and choose Open.
 
 ## Features
 
@@ -94,12 +95,17 @@ key by email. Setup steps and current status are in
 
 ## Building
 
-Needs Xcode or the Command Line Tools on macOS 13 or later.
+Needs Xcode on macOS 13 or later. The Command Line Tools alone are enough for
+`swift build`, but not for the universal (arm64 + x86_64) release build.
 
 ```sh
-scripts/build-app.sh    # release build, bundled and signed into dist/SnapBar.app
+scripts/build-app.sh    # universal release build, signed into dist/SnapBar.app and zipped to dist/SnapBar.zip
 open dist/SnapBar.app
 ```
+
+The script signs with the "SnapBar Dev Signing" identity and stops if it's missing.
+Without it, run `ALLOW_ADHOC=1 scripts/build-app.sh` for an ad-hoc build that's
+only for your own Mac.
 
 For quick iteration, `swift build && .build/debug/SnapBar` works, though launch at
 login only works from the real app bundle.

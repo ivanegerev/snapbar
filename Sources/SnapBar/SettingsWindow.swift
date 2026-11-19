@@ -84,7 +84,7 @@ struct SettingsView: View {
                 LabeledContent("License") {
                     HStack(spacing: 8) {
                         Text(license.statusLabel)
-                            .foregroundStyle(license.hasLicense ? .green : .secondary)
+                            .foregroundStyle(license.hasLicense ? .primary : .secondary)
                         Button("Manage…") { UpgradeWindowController.shared.show() }
                     }
                 }

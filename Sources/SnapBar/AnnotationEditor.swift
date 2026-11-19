@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 import CoreImage
 
 // MARK: - Model
@@ -69,40 +70,43 @@ struct Annotation: Identifiable {
 
 struct BackgroundPreset: Identifiable {
     let id: Int
+    let name: String
     let colors: [NSColor]
 
+    // Flat brand fills repeat one colour, because NSGradient needs two stops.
     static let all: [BackgroundPreset] = [
-        .init(id: 0, colors: [NSColor(red: 0.36, green: 0.54, blue: 1.00, alpha: 1), NSColor(red: 0.55, green: 0.30, blue: 0.95, alpha: 1)]),
-        .init(id: 1, colors: [NSColor(red: 0.99, green: 0.42, blue: 0.52, alpha: 1), NSColor(red: 0.98, green: 0.60, blue: 0.25, alpha: 1)]),
-        .init(id: 2, colors: [NSColor(red: 0.13, green: 0.75, blue: 0.58, alpha: 1), NSColor(red: 0.10, green: 0.45, blue: 0.85, alpha: 1)]),
-        .init(id: 3, colors: [NSColor(red: 0.94, green: 0.35, blue: 0.75, alpha: 1), NSColor(red: 0.45, green: 0.25, blue: 0.95, alpha: 1)]),
-        .init(id: 4, colors: [NSColor(white: 0.13, alpha: 1), NSColor(white: 0.05, alpha: 1)]),
-        .init(id: 5, colors: [NSColor(white: 0.96, alpha: 1), NSColor(white: 0.85, alpha: 1)]),
+        .init(id: 0, name: "Paper", colors: [Brand.nsPaper, Brand.nsPaper]),
+        .init(id: 1, name: "Ink", colors: [Brand.nsInk, Brand.nsInk]),
+        .init(id: 2, name: "Vermillion", colors: [Brand.nsVermillion, Brand.nsVermillion]),
+        .init(id: 3, name: "Graphite", colors: [NSColor(Brand.graphite), NSColor(Brand.graphite)]),
     ]
 
     var swiftUIColors: [Color] { colors.map { Color(nsColor: $0) } }
 }
 
 final class EditorModel: ObservableObject {
-    let url: URL
+    /// The file Save writes to; Save As and the HEIC/PDF/GIF → .png save move it.
+    @Published private(set) var url: URL
     let image: NSImage
     let imageSize: CGSize
     lazy var pixelatedImage: NSImage? = Self.pixelate(image)
+    /// Markup that is not in `url` yet; the window asks before closing over it.
+    var isDirty = false
 
-    @Published var annotations: [Annotation] = []
+    @Published var annotations: [Annotation] = [] { didSet { isDirty = true } }
     @Published var current: Annotation?
     @Published var tool: AnnoTool = .arrow
     @Published var color: Color = .red
     @Published var lineWidth: CGFloat = 4
     @Published var stepCounter = 1
 
-    @Published var beautifyOn = false
-    @Published var backgroundIndex = 0
-    @Published var padding: CGFloat = 56
-    @Published var cornerRadius: CGFloat = 14
+    @Published var beautifyOn = false { didSet { isDirty = true } }
+    @Published var backgroundIndex = 0 { didSet { isDirty = true } }
+    @Published var padding: CGFloat = 56 { didSet { isDirty = true } }
+    @Published var cornerRadius: CGFloat = 14 { didSet { isDirty = true } }
 
     /// Non-destructive crop, applied at render time. nil = full image.
-    @Published var cropRect: CGRect?
+    @Published var cropRect: CGRect? { didSet { isDirty = true } }
 
     // In-progress text annotation being typed.
     @Published var pendingTextAt: CGPoint?
@@ -118,7 +122,9 @@ final class EditorModel: ObservableObject {
     var fontSize: CGFloat { max(14, lineWidth * 6) }
 
     func undo() {
-        if !annotations.isEmpty { annotations.removeLast() }
+        guard let last = annotations.popLast() else { return }
+        // Undo is LIFO, so a removed step is always the highest number left.
+        if last.tool == .step { stepCounter = last.number }
     }
 
     func clearAll() {
@@ -150,15 +156,20 @@ final class EditorModel: ObservableObject {
     // MARK: - Final rendering (AppKit, bottom-left origin)
 
     func renderFinal() -> NSImage {
-        let pad = beautifyOn ? padding : 0
-        let src = cropRect ?? CGRect(origin: .zero, size: imageSize)
+        let px = image.representations.map(\.pixelsWide).max() ?? 0
+        // Vector reps (PDF captures) report 0 pixels; rasterize those at screen scale, not 1x.
+        let pxPerPoint = px > 0 ? max(1, CGFloat(px) / imageSize.width) : (NSScreen.main?.backingScaleFactor ?? 2)
+        // Crop and padding on whole device pixels, so the image is copied rather than resampled.
+        func snap(_ v: CGFloat) -> CGFloat { (v * pxPerPoint).rounded() / pxPerPoint }
+        let pad = snap(beautifyOn ? padding : 0)
+        let c = cropRect ?? CGRect(origin: .zero, size: imageSize)
+        let src = CGRect(x: snap(c.minX), y: snap(c.minY), width: snap(c.maxX) - snap(c.minX), height: snap(c.maxY) - snap(c.minY))
         let outPointSize = CGSize(width: src.width + pad * 2, height: src.height + pad * 2)
-        let pxPerPoint = max(1, CGFloat(image.representations.map(\.pixelsWide).max() ?? Int(imageSize.width)) / imageSize.width)
 
         let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
-            pixelsWide: Int(outPointSize.width * pxPerPoint),
-            pixelsHigh: Int(outPointSize.height * pxPerPoint),
+            pixelsWide: Int((outPointSize.width * pxPerPoint).rounded()),
+            pixelsHigh: Int((outPointSize.height * pxPerPoint).rounded()),
             bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
             colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
         )!
@@ -197,6 +208,9 @@ final class EditorModel: ObservableObject {
         let h = imageSize.height
         func cv(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x - src.minX + pad, y: src.maxY - p.y + pad) }
         func cvRect(_ r: CGRect) -> CGRect { CGRect(x: r.minX - src.minX + pad, y: src.maxY - r.maxY + pad, width: r.width, height: r.height) }
+
+        // Keep markup outside the crop or image off the backdrop, as the preview's clipShape does.
+        if beautifyOn { NSBezierPath(roundedRect: imgRect, xRadius: cornerRadius, yRadius: cornerRadius).addClip() }
 
         for a in annotations {
             let ns = NSColor(a.color)
@@ -287,22 +301,50 @@ final class EditorModel: ObservableObject {
     }
 
     func save(to destination: URL? = nil) {
-        let target = destination ?? url
-        let rendered = renderFinal()
-        guard let tiff = rendered.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return }
+        commitPendingText()
+        var target = destination ?? url
         let type: NSBitmapImageRep.FileType
         switch target.pathExtension.lowercased() {
         case "jpg", "jpeg": type = .jpeg
-        case "tiff": type = .tiff
-        default: type = .png
+        case "tif", "tiff": type = .tiff
+        case "png": type = .png
+        default:
+            // NSBitmapImageRep can't write HEIC/PDF/GIF: save a sibling .png (never an existing file)
+            // instead of putting PNG bytes under the original's name.
+            type = .png
+            let base = target.deletingPathExtension()
+            target = base.appendingPathExtension("png")
+            var n = 2
+            while FileManager.default.fileExists(atPath: target.path) {
+                target = base.deletingLastPathComponent().appendingPathComponent("\(base.lastPathComponent) \(n).png")
+                n += 1
+            }
         }
-        guard let data = rep.representation(using: type, properties: [.compressionFactor: 0.92]) else { return }
-        try? data.write(to: target)
+        let rendered = renderFinal()
+        guard let tiff = rendered.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+              let data = rep.representation(using: type, properties: [.compressionFactor: 0.92]) else {
+            Toast.show("Couldn't save \(target.lastPathComponent)", symbol: "exclamationmark.triangle", tint: .orange)
+            return
+        }
+        // Not .atomic: that swaps in a new inode and drops Finder tags and the CaptureTag xattr.
+        let tmp = Prefs.replacementTempURL(for: target)
+        do {
+            try data.write(to: tmp)
+            _ = try FileManager.default.replaceItemAt(target, withItemAt: tmp)
+        } catch {
+            try? FileManager.default.removeItem(at: tmp)
+            Toast.show("Couldn't save — \(error.localizedDescription)", symbol: "exclamationmark.triangle", tint: .orange)
+            return
+        }
+        url = target
+        isDirty = false
         Recents.add(target)
+        NotificationCenter.default.post(name: AppServices.capturesChanged, object: target)
         Toast.show("Saved \(target.lastPathComponent)")
     }
 
     func copyToClipboard() {
+        commitPendingText()
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.writeObjects([renderFinal()])
@@ -333,21 +375,19 @@ struct EditorView: View {
                 let scale = zoomFactor ?? fit
                 let size = CGSize(width: model.imageSize.width * scale, height: model.imageSize.height * scale)
                 ScrollView([.horizontal, .vertical]) {
+                    // Backdrop, padding and shadow scale with zoom, so the preview frames the image as the saved file does.
                     canvas(displaySize: size)
                         .frame(width: size.width, height: size.height)
                         .clipShape(RoundedRectangle(cornerRadius: model.beautifyOn ? model.cornerRadius * scale : 0))
-                        .shadow(color: model.beautifyOn ? .black.opacity(0.4) : .clear, radius: 16, y: 6)
-                        .padding(model.beautifyOn ? 48 : 16)
-                        .frame(minWidth: geo.size.width, minHeight: geo.size.height)
-                }
-                .background(
-                    model.beautifyOn
-                        ? AnyView(LinearGradient(
+                        .shadow(color: model.beautifyOn ? .black.opacity(0.45) : .clear, radius: 15 * scale, y: 6 * scale)
+                        .padding(model.beautifyOn ? model.padding * scale : 16)
+                        .background(model.beautifyOn ? LinearGradient(
                             colors: BackgroundPreset.all[model.backgroundIndex % BackgroundPreset.all.count].swiftUIColors,
                             startPoint: .topLeading, endPoint: .bottomTrailing
-                        ))
-                        : AnyView(Color(nsColor: .underPageBackgroundColor))
-                )
+                        ) : nil)
+                        .frame(minWidth: geo.size.width, minHeight: geo.size.height)
+                }
+                .background(Color(nsColor: .underPageBackgroundColor))
                 .onAppear { fittedScale = fit }
                 .onChange(of: geo.size) { newSize in fittedScale = fitScale(in: newSize) }
             }
@@ -360,10 +400,11 @@ struct EditorView: View {
     }
 
     private func fitScale(in container: CGSize) -> CGFloat {
-        let inset: CGFloat = model.beautifyOn ? 96 : 32
-        let availW = max(container.width - inset, 100)
-        let availH = max(container.height - inset, 100)
-        return min(availW / model.imageSize.width, availH / model.imageSize.height, 1)
+        // Beautify padding scales with the image, so fit both inside a fixed 16pt margin.
+        let pad = model.beautifyOn ? model.padding * 2 : 0
+        let availW = max(container.width - 32, 100)
+        let availH = max(container.height - 32, 100)
+        return min(availW / (model.imageSize.width + pad), availH / (model.imageSize.height + pad), 1)
     }
 
     private var zoomLabel: String {
@@ -466,7 +507,10 @@ struct EditorView: View {
                 default:
                     if var cur = model.current {
                         cur.end = loc
-                        model.annotations.append(cur)
+                        // A click without a drag would leave a stray arrow or dot; freehand dots are deliberate.
+                        if hypot(cur.end.x - cur.start.x, cur.end.y - cur.start.y) > 2 || cur.tool == .freehand || cur.tool == .highlight {
+                            model.annotations.append(cur)
+                        }
                     }
                     model.current = nil
                 }
@@ -555,97 +599,106 @@ struct EditorView: View {
 
     private var toolbar: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 2) {
-                ForEach(AnnoTool.allCases) { tool in
-                    toolButton(tool)
+            // Scrolls instead of clipping when the window is narrower than the tools; the actions stay pinned.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    HStack(spacing: 2) {
+                        ForEach(AnnoTool.allCases) { tool in
+                            toolButton(tool)
+                        }
+                    }
+                    .padding(3)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
+
+                    Divider().frame(height: 20)
+
+                    HStack(spacing: 5) {
+                        ForEach(swatches, id: \.self) { swatch in
+                            Button { model.color = swatch } label: {
+                                Circle()
+                                    .fill(swatch)
+                                    .frame(width: 15, height: 15)
+                                    .overlay(Circle().strokeBorder(.separator, lineWidth: 0.5))
+                                    .overlay(
+                                        Circle().strokeBorder(Brand.vermillion, lineWidth: model.color == swatch ? 2 : 0).padding(-3)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(swatch.description.capitalized)
+                            .accessibilityAddTraits(model.color == swatch ? .isSelected : [])
+                        }
+                    }
+
+                    Slider(value: $model.lineWidth, in: 1...12)
+                        .frame(width: 80)
+                        .help("Stroke width")
+
+                    Divider().frame(height: 20)
+
+                    Button {
+                        if !license.isPro {
+                            UpgradeWindowController.shared.show()
+                        } else {
+                            model.beautifyOn.toggle()
+                        }
+                    } label: {
+                        Label(license.isPro ? "Beautify" : "Beautify (Pro)", systemImage: "photo.artframe")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(model.beautifyOn ? Brand.vermillion : nil)
+
+                    if let crop = model.cropRect {
+                        Button {
+                            model.cropRect = nil
+                        } label: {
+                            Label("\(Int(crop.width))×\(Int(crop.height))", systemImage: "xmark")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(Brand.vermillion)
+                        .help("Crop applied on save — click to clear")
+                    }
+
+                    Divider().frame(height: 20)
+
+                    HStack(spacing: 3) {
+                        Button {
+                            zoomStep(-1)
+                        } label: {
+                            Image(systemName: "minus.magnifyingglass")
+                        }
+                        .keyboardShortcut("-", modifiers: .command)
+                        .help("Zoom out (⌘−)")
+
+                        Text(zoomLabel)
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .frame(width: 36)
+
+                        Button {
+                            zoomStep(1)
+                        } label: {
+                            Image(systemName: "plus.magnifyingglass")
+                        }
+                        .keyboardShortcut("=", modifiers: .command)
+                        .help("Zoom in (⌘+)")
+
+                        Button("Fit") {
+                            zoomFactor = nil
+                        }
+                        .keyboardShortcut("0", modifiers: .command)
+                        .help("Fit to window (⌘0)")
+                    }
                 }
             }
-            .padding(3)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
-
-            Divider().frame(height: 20)
-
-            HStack(spacing: 5) {
-                ForEach(swatches, id: \.self) { swatch in
-                    Circle()
-                        .fill(swatch)
-                        .frame(width: 15, height: 15)
-                        .overlay(Circle().strokeBorder(.separator, lineWidth: 0.5))
-                        .overlay(
-                            Circle().strokeBorder(Color.accentColor, lineWidth: model.color == swatch ? 2 : 0).padding(-3)
-                        )
-                        .onTapGesture { model.color = swatch }
-                }
-            }
-
-            Slider(value: $model.lineWidth, in: 1...12)
-                .frame(width: 80)
-                .help("Stroke width")
-
-            Divider().frame(height: 20)
-
-            Button {
-                if !license.isPro {
-                    UpgradeWindowController.shared.show()
-                } else {
-                    model.beautifyOn.toggle()
-                }
-            } label: {
-                Label(license.isPro ? "Beautify" : "Beautify (Pro)", systemImage: "sparkles")
-            }
-            .buttonStyle(.bordered)
-            .tint(model.beautifyOn ? Brand.vermillion : nil)
-
-            if let crop = model.cropRect {
-                Button {
-                    model.cropRect = nil
-                } label: {
-                    Label("\(Int(crop.width))×\(Int(crop.height))", systemImage: "xmark")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                }
-                .buttonStyle(.bordered)
-                .tint(Brand.vermillion)
-                .help("Crop applied on save — click to clear")
-            }
-
-            Divider().frame(height: 20)
-
-            HStack(spacing: 3) {
-                Button {
-                    zoomStep(-1)
-                } label: {
-                    Image(systemName: "minus.magnifyingglass")
-                }
-                .keyboardShortcut("-", modifiers: .command)
-                .help("Zoom out (⌘−)")
-
-                Text(zoomLabel)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .frame(width: 36)
-
-                Button {
-                    zoomStep(1)
-                } label: {
-                    Image(systemName: "plus.magnifyingglass")
-                }
-                .keyboardShortcut("=", modifiers: .command)
-                .help("Zoom in (⌘+)")
-
-                Button("Fit") {
-                    zoomFactor = nil
-                }
-                .keyboardShortcut("0", modifiers: .command)
-                .help("Fit to window (⌘0)")
-            }
-
-            Spacer()
+            .fixedSize(horizontal: false, vertical: true)
 
             Button {
                 model.undo()
             } label: {
                 Image(systemName: "arrow.uturn.backward")
             }
-            .keyboardShortcut("z", modifiers: .command)
+            // While text is being typed, ⌘Z belongs to the text field (Edit menu undo:).
+            .keyboardShortcut(model.pendingTextAt == nil ? KeyboardShortcut("z", modifiers: .command) : nil)
             .help("Undo")
             .disabled(model.annotations.isEmpty)
 
@@ -682,7 +735,7 @@ struct EditorView: View {
                 .frame(width: 28, height: 24)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(model.tool == tool ? Color.accentColor.opacity(0.85) : .clear)
+                        .fill(model.tool == tool ? Brand.vermillion.opacity(0.85) : .clear)
                 )
                 .foregroundStyle(model.tool == tool ? .white : .primary)
                 .overlay(alignment: .topTrailing) {
@@ -700,14 +753,20 @@ struct EditorView: View {
             Text("Background").font(.caption).foregroundStyle(.secondary)
             HStack(spacing: 6) {
                 ForEach(BackgroundPreset.all) { preset in
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(LinearGradient(colors: preset.swiftUIColors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 30, height: 20)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 5)
-                                .strokeBorder(Color.accentColor, lineWidth: model.backgroundIndex == preset.id ? 2 : 0)
-                        )
-                        .onTapGesture { model.backgroundIndex = preset.id }
+                    Button { model.backgroundIndex = preset.id } label: {
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(LinearGradient(colors: preset.swiftUIColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 30, height: 20)
+                            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.separator, lineWidth: 0.5))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 5)
+                                    .strokeBorder(Brand.vermillion, lineWidth: model.backgroundIndex == preset.id ? 2 : 0)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help(preset.name)
+                    .accessibilityLabel("\(preset.name) background")
+                    .accessibilityAddTraits(model.backgroundIndex == preset.id ? .isSelected : [])
                 }
             }
             Divider().frame(height: 18)
@@ -735,7 +794,58 @@ struct EditorView: View {
 // MARK: - Window controller
 
 enum EditorWindowController {
-    private static var windows: [NSWindow] = []
+    /// Open editors. NSWindow.delegate is weak, so this keeps each delegate (and its window) alive.
+    private static var windows: [Delegate] = []
+
+    /// Asks before closing over unsaved markup, keeps the title on the file Save writes to,
+    /// and forgets the window once it closes.
+    private final class Delegate: NSObject, NSWindowDelegate {
+        let window: NSWindow
+        let model: EditorModel
+        private var titleSub: AnyCancellable?
+
+        init(window: NSWindow, model: EditorModel) {
+            self.window = window
+            self.model = model
+            super.init()
+            titleSub = model.$url.sink { [weak window] in window?.title = "Edit — \($0.lastPathComponent)" }
+        }
+
+        func windowShouldClose(_ sender: NSWindow) -> Bool {
+            model.commitPendingText()
+            guard model.isDirty else { return true }
+            let alert = NSAlert()
+            alert.messageText = "Save changes to “\(model.url.lastPathComponent)”?"
+            alert.informativeText = "Your markup will be lost if you don't save it."
+            alert.addButton(withTitle: "Save")
+            alert.addButton(withTitle: "Don't Save")
+            alert.addButton(withTitle: "Cancel")
+            alert.beginSheetModal(for: sender) { [model] response in
+                switch response {
+                case .alertFirstButtonReturn:
+                    model.save()
+                    if !model.isDirty { sender.close() } // a failed save keeps the window open
+                case .alertSecondButtonReturn:
+                    sender.close()
+                default:
+                    break
+                }
+            }
+            return false
+        }
+
+        func windowWillClose(_ notification: Notification) {
+            windows.removeAll { $0 === self }
+        }
+    }
+
+    /// Quit never calls windowShouldClose, so before terminating put each dirty editor's
+    /// Save sheet up instead. Returns true if any editor still has unsaved markup.
+    static func closeDirtyForQuit() -> Bool {
+        let dirty = windows.filter { $0.model.commitPendingText(); return $0.model.isDirty }
+        dirty.forEach { $0.window.performClose(nil) }
+        return !dirty.isEmpty
+    }
 
     static func open(_ url: URL) {
         guard let model = EditorModel(url: url) else {
@@ -744,20 +854,13 @@ enum EditorWindowController {
         }
         let hosting = NSHostingController(rootView: EditorView(model: model))
         let window = NSWindow(contentViewController: hosting)
-        window.title = "Edit — \(url.lastPathComponent)"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.setContentSize(NSSize(width: 960, height: 640))
+        window.setContentSize(NSSize(width: 1200, height: 640))
         window.isReleasedWhenClosed = false
         window.center()
-        windows.append(window)
-
-        NotificationCenter.default.addObserver(
-            forName: NSWindow.willCloseNotification, object: window, queue: .main
-        ) { note in
-            if let win = note.object as? NSWindow {
-                windows.removeAll { $0 === win }
-            }
-        }
+        let delegate = Delegate(window: window, model: model)
+        window.delegate = delegate
+        windows.append(delegate)
 
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)

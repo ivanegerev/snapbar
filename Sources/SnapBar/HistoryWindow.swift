@@ -63,6 +63,17 @@ final class ThumbLoader {
     static let shared = ThumbLoader()
     private let cache = NSCache<NSURL, NSImage>()
 
+    private init() {
+        // A file overwritten in place keeps its URL, so its cached thumbnail must go.
+        NotificationCenter.default.addObserver(forName: AppServices.capturesChanged, object: nil, queue: nil) { [cache] note in
+            if let url = note.object as? URL {
+                cache.removeObject(forKey: url as NSURL)
+            } else {
+                cache.removeAllObjects()
+            }
+        }
+    }
+
     func thumbnail(for url: URL, isMovie: Bool) async -> NSImage? {
         if let cached = cache.object(forKey: url as NSURL) { return cached }
         let image: NSImage? = await Task.detached(priority: .utility) {
@@ -218,7 +229,7 @@ private struct HistoryCell: View {
                 .font(.system(size: 9, weight: .medium, design: .monospaced))
                 .foregroundStyle(.secondary)
         }
-        .task(id: item.url) {
+        .task(id: item.date) { // the cell is keyed by URL; a new mtime means the file changed
             thumb = await ThumbLoader.shared.thumbnail(for: item.url, isMovie: item.isMovie)
         }
         .onTapGesture(count: 2) { services.open(item.url) }
